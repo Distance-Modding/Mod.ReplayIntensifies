@@ -1,16 +1,9 @@
-# Distance mod template
+# Distance Replay Intensifies
 
-Use this repository as a base to create your own Distance mods.
+Distance mod to raise the replay car count maximum up to 1000. The setting can be configured in the vanilla replay options menu.
 
-# Using the template
-On github, click the `Use this template` button to create a new repository based on this one
+## Preview
 
-Once the repository is created, be sure to clone it locally **with submodules**:
-```sh
-git clone --recurse-submodules -j8 <your project .git url>
-```
+> #### **[Distance: Rush Hour - Friction (50 Replays at once)](https://www.youtube.com/watch?v=tsvFKG1aANU)**
+> [![Distance: Rush Hour - Friction (50 replays at once)](https://img.youtube.com/vi/tsvFKG1aANU/0.jpg)](https://www.youtube.com/watch?v=tsvFKG1aANU)
 
-# Setting up the project
-After cloning the repository on your local drive, run the [setup.ps1](setup.ps1) script using [PowerShell 7 or higher](https://github.com/PowerShell/PowerShell#get-powershell).
-
-This script will rename the files correctly and replace their content to match your mod name.
