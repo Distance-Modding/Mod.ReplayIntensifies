@@ -211,7 +211,7 @@ namespace Distance.ReplayIntensifies
 				"MAX AUTO REPLAYS",
 				() => G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_,
 				(value) => G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_ = value,
-				0, Mod.MaxReplaysAtAll,
+				1, Mod.MaxReplaysAtAll,
 				5,
 				"Maximum number of ghosts that will auto-load when playing a level. This is the [i]GHOSTS IN ARCADE COUNT[/i] option from the Replays menu, and is included here for convenience.");
 
