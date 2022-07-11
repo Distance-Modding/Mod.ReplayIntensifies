@@ -9,24 +9,28 @@ using UnityEngine;
 namespace Distance.ReplayIntensifies.Harmony
 {
 	/// <summary>
-	/// Patch the replay car spawner to allow a maximum ghost count up to <see cref="Mod.MaxReplaysAtAll"/>.
+	/// Patch to extend limit for saved local replays, by preventing replays from being removed from the leaderboards.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Max Auto Replay Ghosts (part 1/2), and Max Selected Replay Ghosts (part 2/2).
+	/// Required For: Max Saved Local Replays (part 2/2).
 	/// </remarks>
-	[HarmonyPatch(typeof(ReplayManager), nameof(ReplayManager.SpawnReplay))]
-	internal static class ReplayManager__SpawnReplay
+	[HarmonyPatch(typeof(LocalLeaderboard), nameof(LocalLeaderboard.TrimResults))]
+	internal static class LocalLeaderboard__TrimResults
 	{
-		// void SpawnReplay(CarReplayData replayData, bool isGhost)
+		// void TrimResults()
 		[HarmonyTranspiler]
 		internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
 		{
 			Mod.Instance.Logger.Info("Transpiling...");
 			// VISUAL:
-			// Changes the max count comparison operand (20) to the new maximum specified by the mod.
-			//if (PlayerDataReplay.ReplayPlayers_.Count >= 20 || !ReplayManager.SaveLoadReplays_)
+			// Changes the max count comparison operands (20) to the new maximum specified by the mod.
+			//if (count > 20)
 			//{
-			//	return false;
+			//	for (int i = 20; i < count; i++)
+			//	{
+			//		FileEx.DeleteIfExists(CarReplayData.GetReplayFilePath(this, this.results_[i].ReplayGuid_, false));
+			//	}
+			//	this.results_.RemoveRange(20, count - 20);
 			//}
 
 			var codes = new List<CodeInstruction>(instructions);
@@ -38,11 +42,11 @@ namespace Distance.ReplayIntensifies.Harmony
 					Mod.Instance.Logger.Info($"ldc.i4.s 20 @ {i}");
 
 					// Replace: ldc.i4.s 20
-					// With:    call Mod.GetMaxSpawnReplays
+					// With:    call Mod.GetMaxSavedLocalReplays
 					codes[i].opcode = OpCodes.Call;
-					codes[i].operand = typeof(Mod).GetMethod(nameof(Mod.GetMaxSpawnReplays));
+					codes[i].operand = typeof(Mod).GetMethod(nameof(Mod.GetMaxSavedLocalReplays));
 
-					break;
+					// This instruction appears 4 times, so no breaking after our first find.
 				}
 			}
 			return codes.AsEnumerable();

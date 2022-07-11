@@ -9,24 +9,26 @@ using UnityEngine;
 namespace Distance.ReplayIntensifies.Harmony
 {
 	/// <summary>
-	/// Patch the replay car spawner to allow a maximum ghost count up to <see cref="Mod.MaxReplaysAtAll"/>.
+	/// Patch to extend limit for saved local replays, by allowing replays at higher indexes to be inserted.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Max Auto Replay Ghosts (part 1/2), and Max Selected Replay Ghosts (part 2/2).
+	/// Required For: Max Saved Local Replays (part 1/2).
 	/// </remarks>
-	[HarmonyPatch(typeof(ReplayManager), nameof(ReplayManager.SpawnReplay))]
-	internal static class ReplayManager__SpawnReplay
+	[HarmonyPatch(typeof(LocalLeaderboard), nameof(LocalLeaderboard.InsertResult))]
+	internal static class LocalLeaderboard__InsertResult
 	{
-		// void SpawnReplay(CarReplayData replayData, bool isGhost)
+		// bool InsertResult(string profileName, int profileID, int value, CarReplayData.GUID replayGuid)
 		[HarmonyTranspiler]
 		internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
 		{
 			Mod.Instance.Logger.Info("Transpiling...");
 			// VISUAL:
 			// Changes the max count comparison operand (20) to the new maximum specified by the mod.
-			//if (PlayerDataReplay.ReplayPlayers_.Count >= 20 || !ReplayManager.SaveLoadReplays_)
+			//if (newEntryIndex < 20)
 			//{
-			//	return false;
+			//	this.results_.Insert(newEntryIndex, new ResultInfo(profileName, profileID, value, replayGuid));
+			//	this.TrimResults();
+			//	return true;
 			//}
 
 			var codes = new List<CodeInstruction>(instructions);
@@ -38,9 +40,9 @@ namespace Distance.ReplayIntensifies.Harmony
 					Mod.Instance.Logger.Info($"ldc.i4.s 20 @ {i}");
 
 					// Replace: ldc.i4.s 20
-					// With:    call Mod.GetMaxSpawnReplays
+					// With:    call Mod.GetMaxSavedLocalReplays
 					codes[i].opcode = OpCodes.Call;
-					codes[i].operand = typeof(Mod).GetMethod(nameof(Mod.GetMaxSpawnReplays));
+					codes[i].operand = typeof(Mod).GetMethod(nameof(Mod.GetMaxSavedLocalReplays));
 
 					break;
 				}

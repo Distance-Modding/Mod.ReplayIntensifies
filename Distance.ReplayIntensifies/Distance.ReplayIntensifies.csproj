@@ -86,6 +86,18 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ConfigurationLogic.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\CreatePlayerDataReplay.cs" />
+    <Compile Include="Scripts\PlayerDataReplayCompoundData.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\CarLevelOfDetail\SetLevelOfDetail.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\FinishMenuLogic\ShowOnlineLeaderboards.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\LevelSelectLeaderboardMenu\SetupLeaderboards.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\LocalLeaderboard\InsertResult.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\LocalLeaderboard\TrimResults.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataBase\Initialize.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\InitCarBlueprintVirtual.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\GetLevelOfDetailType.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\InitPlayerDataReplay.cs" />
     <Compile Include="Harmony\Assembly-CSharp\ReplayManager\PlayPickedReplays.cs" />
     <Compile Include="Harmony\Assembly-CSharp\ReplayManager\SpawnReplay.cs" />
     <Compile Include="Harmony\Assembly-CSharp\ReplayOptionsMenu\InitializeVirtual.cs" />
@@ -96,6 +108,7 @@
     <None Include="Distance.ReplayIntensifies.targets" />
     <None Include="packages.config" />
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <!-- 15.0 is for VS2017, adjust if necessary -->

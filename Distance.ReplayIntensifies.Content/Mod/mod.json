@@ -1,10 +1,10 @@
 ﻿{
 	"FriendlyName": "Replay Intensifies",
-	"Description": "Ups the maximum replay car count to 1000.",
-	"Author": "Reherc",
-	"Contact": "Github: @REHERC",
-	"Porter": "trigger_segfault",
-	"PorterContact": "Github: @trigger-segfault; Discord: trigger_segfault#7281",
+	"Description": "Extended customization for Ghost and Replay Mode cars.",
+	"Author": "trigger_segfault",
+	"Contact": "Github: @trigger-segfault; Discord: trigger_segfault#7281",
+	"OriginalAuthor": "Reherc",
+	"OriginalContact": "Github: @REHERC",
 	"ModuleFileName": "Distance.ReplayIntensifies.dll",
 	"RequiredGSLs": [
 		"com.github.reherc/Centrifuge.Distance"
