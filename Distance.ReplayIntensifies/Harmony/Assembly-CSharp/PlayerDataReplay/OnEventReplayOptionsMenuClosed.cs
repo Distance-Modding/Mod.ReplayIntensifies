@@ -1,52 +1,29 @@
 ﻿using Distance.ReplayIntensifies.Scripts;
 using HarmonyLib;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
-using UnityEngine;
 
 namespace Distance.ReplayIntensifies.Harmony
 {
 	/// <summary>
-	/// Patch to change the value of <see cref="PlayerDataReplay.simulateNetworkCar_"/> for the duration of the function.
-	/// <para/>
-	/// Also includes patch to handle applying the car outline brightness.
+	/// Patch to handle changes to the car outline brightness setting, and reflect those changes.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Car Visual Style (part 4/5).
+	/// Required For: Car Visual Style (part 5/5).
 	/// </remarks>
-	[HarmonyPatch(typeof(PlayerDataReplay), nameof(PlayerDataReplay.InitPlayerDataReplay))]
-	internal static class PlayerDataReplay__InitPlayerDataReplay
+	[HarmonyPatch(typeof(PlayerDataReplay), nameof(PlayerDataReplay.OnEventReplayOptionsMenuClosed))]
+	internal static class PlayerDataReplay__OnEventReplayOptionsMenuClosed
 	{
 		[HarmonyPrefix]
-		internal static void Prefix(PlayerDataReplay __instance, out bool? __state, CarReplayData data, bool isGhost)
+		internal static void Prefix(PlayerDataReplay __instance)
 		{
-			__state = null;
-
+			// Brightness only updated for ghosts in original method, so update it here for non-ghosts.
 			var compoundData = __instance.GetComponent<PlayerDataReplayCompoundData>();
-			if (compoundData)
+			if (compoundData && !__instance.IsGhost_)
 			{
-				// Backup then change `simulateNetworkCar_` state.
-				__state = PlayerDataReplay.simulateNetworkCar_;
-				PlayerDataReplay.simulateNetworkCar_ = compoundData.SimulateNetworkCar;
-
-				// Brightness only updated for ghosts in original method, so update it here for non-ghosts.
-				if (!__instance.IsGhost_)
-				{
-					__instance.outlineBrightness_ = compoundData.GetOutlineBrightness();
-				}
-			}
-		}
-
-		[HarmonyPostfix]
-		internal static void Postfix(bool? __state)
-		{
-			// Restore original `simulateNetworkCar_` state.
-			if (__state.HasValue)
-			{
-				PlayerDataReplay.simulateNetworkCar_ = __state.Value;
+				__instance.outlineBrightness_ = compoundData.GetOutlineBrightness();
 			}
 		}
 
@@ -59,10 +36,8 @@ namespace Distance.ReplayIntensifies.Harmony
 			//if (this.isGhost_)
 			//{
 			//	this.outlineBrightness_ = this.replaySettings_.GhostBrightness_;
-			//	this.skidmarkPrefab_ = null;
 			//   -to-
 			//  this.outlineBrightness_ = GetGhostBrightness_(this);
-			//	this.skidmarkPrefab_ = null;
 			//}
 
 			var codes = new List<CodeInstruction>(instructions);
@@ -79,7 +54,7 @@ namespace Distance.ReplayIntensifies.Harmony
 					codes.RemoveRange(i - 1, 2);
 					codes.InsertRange(i - 1, new CodeInstruction[]
 					{
-						new CodeInstruction(OpCodes.Call, typeof(PlayerDataReplay__InitPlayerDataReplay).GetMethod(nameof(GetGhostBrightness_))),
+						new CodeInstruction(OpCodes.Call, typeof(PlayerDataReplay__OnEventReplayOptionsMenuClosed).GetMethod(nameof(GetGhostBrightness_))),
 					});
 
 					break;

@@ -18,7 +18,7 @@ namespace Distance.ReplayIntensifies.Harmony
 		{
 			// Avoid clamping if the max is unchanged (InFocusFP), just in-case other mods mess with this...
 			// NOTE: Highest LOD is lowest-value enum, so compare using less than.
-			CarLevelOfDetail.Level maxLevel = Mod.Instance.Config.MaxLevelOfDetail;
+			CarLevelOfDetail.Level maxLevel = Mod.Instance.Config.MaxLevelOfDetailCached;
 
 			// NOTE: Replay-type cars will NOT RENDER A SOLID BODY at Speck, so force the minimum to VeryFar.
 			//       Interestingly, networked cars WILL render a solid body at Speck.
@@ -34,7 +34,7 @@ namespace Distance.ReplayIntensifies.Harmony
 			{
 				// Avoid clamping if the min is unchanged (Speck), just in-case other mods mess with this...
 				// MaxLevel has priority over MinLevel (when the range is invalid)
-				CarLevelOfDetail.Level minLevel = Mod.Instance.Config.MinLevelOfDetail;
+				CarLevelOfDetail.Level minLevel = Mod.Instance.Config.MinLevelOfDetailCached;
 				if (newLevel > minLevel && minLevel != CarLevelOfDetail.Level.Speck)
 				{
 					newLevel = minLevel;

@@ -18,6 +18,18 @@ This started off as a port of Reherc's [Replay Limit Breaker](https://github.com
 * Change the minimum and maximum car Level of Detail (LOD), to help improve performance or up the graphics.
 * Disable clamping opponent car colors, so that ultrabright color presets can be seen (this affects Online mode cars as well).
 
+### Steam Rivals
+
+An experimental feature that makes selected players visually stand out when racing, so that you can spot your *true* opponent from far away (rivals are also highlighted differently in the level select leaderboards menu). Steam Rivals can be added or removed from the level select leaderboards menu, or by editing `Settings/Config.json`.
+
+* Enable or disable Steam Rivals (disabled by default).
+* Change whether Steam Rivals are highlighted differently in the level select leaderboards menu.
+* Change whether Steam Rival car styles are used for ghosts.
+* Change whether Steam Rival car styles are used in Replay Mode.
+* Change whether Steam Rival car styles are used for your own ghosts/replays.
+* Change the visual style for Steam Rival cars.
+* Change the outline brightness for Steam Rival cars.
+
 
 ## Preview
 

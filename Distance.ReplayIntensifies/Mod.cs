@@ -1,5 +1,6 @@
 ﻿using Centrifuge.Distance.Game;
 using Centrifuge.Distance.GUI.Data;
+using Distance.ReplayIntensifies.Helpers;
 using Distance.ReplayIntensifies.Scripts;
 using Reactor.API.Attributes;
 using Reactor.API.Interfaces.Systems;
@@ -74,6 +75,17 @@ namespace Distance.ReplayIntensifies
 			catch (Exception ex)
 			{
 				Logger.Error(Mod.Name + ": Error during Harmony.PatchAll()");
+				Logger.Exception(ex);
+				throw;
+			}
+
+			try
+			{
+				SteamworksHelper.Init(); // Handle this here for early error reporting.
+			}
+			catch (Exception ex)
+			{
+				Logger.Error(Mod.Name + ": Error during SteamworksHelper.Init()");
 				Logger.Exception(ex);
 				throw;
 			}
@@ -198,7 +210,7 @@ namespace Distance.ReplayIntensifies
 
 			MenuTree settingsMenu = new MenuTree("menu.mod." + Mod.Name.ToLower(), Mod.FriendlyName);
 
-
+			// Page 1
 			settingsMenu.CheckBox(MenuDisplayMode.Both,
 				"setting:use_max_selected_replays",
 				"USE MAX SELECTED REPLAYS",
@@ -286,6 +298,20 @@ namespace Distance.ReplayIntensifies
 				" Raising Min Level of Detail can decrease performance when playing with more ghosts.");
 
 
+			// Page 2
+			// Put this submenu at the top of the second page, for faster access over the less-important "ENABLE UNRESTRICTED OPPONENT COLORS".
+			// We can't check for Steam builds this early in initialization, so always show the menu.
+			// It's fine, since the setting will always claim itself to be 'off' when `SteamworksManager.IsSteamBuild_` is false.
+			//if (SteamworksManager.IsSteamBuild_)
+			//{
+				settingsMenu.SubmenuButton(MenuDisplayMode.Both,
+					"submenu:rivals",
+					"STEAM RIVALS SETTINGS", // "\u25B6" Black right-pointing triangle
+					CreateSteamRivalsSubmenu(carStyleEntries),
+					"EXPERIMENTAL: Steam Rivals are users who're given their own ghost car style, so that you can spot your [i]true[/i] opponent from far away." +
+					" Users can be changed from the level select leaderboards menu, or by editing Settings/Config.json.");
+			//}
+
 			settingsMenu.CheckBox(MenuDisplayMode.Both,
 				"setting:enable_unrestricted_colors",
 				"ENABLE UNRESTRICTED OPPONENT COLORS",
@@ -298,6 +324,108 @@ namespace Distance.ReplayIntensifies
 			Menus.AddNew(MenuDisplayMode.Both, settingsMenu,
 				Mod.FriendlyName.ToUpper(),
 				"Settings for replay limits, leaderboard limits, and car rendering.");
+		}
+
+		private MenuTree CreateSteamRivalsSubmenu(Dictionary<string, CarStyle> carStyleEntries)
+		{
+			MenuTree rivalsSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".rivals", "Steam Rivals");
+
+			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:rivals_enabled",
+				"ENABLE STEAM RIVALS",
+				() => Config.EnableSteamRivals,
+				(value) => Config.EnableSteamRivals = value,
+				"Turns on this experimental feature.");
+
+			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:rivals_highlight_in_leaderboards",
+				"HIGHLIGHT RIVALS IN LEADERBOARDS",
+				() => Config.HighlightRivalsInLeaderboards,
+				(value) => Config.HighlightRivalsInLeaderboards = value,
+				"Steam Rivals listed in the level select leaderboards menu will be colored differently.");
+
+			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:rival_use_style_for_ghosts",
+				"USE CAR STYLE FOR GHOST",
+				() => Config.UseRivalStyleForGhosts,
+				(value) => Config.UseRivalStyleForGhosts = value,
+				"Steam Rival car styles will also be used when racing other ghosts.");
+
+			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:rival_use_style_for_replays",
+				"USE CAR STYLE FOR REPLAYS",
+				() => Config.UseRivalStyleForReplays,
+				(value) => Config.UseRivalStyleForReplays = value,
+				"Steam Rival car styles will also be used when in Replay Mode.");
+
+			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:rival_use_style_for_self",
+				"USE CAR STYLE FOR SELF",
+				() => Config.UseRivalStyleForSelf,
+				(value) => Config.UseRivalStyleForSelf = value,
+				"Steam Rival car styles will also be used for your own ghosts.");
+
+			rivalsSubmenu.ListBox<CarStyle>(MenuDisplayMode.Both,
+				"setting:rival_car_style",
+				"RIVAL CAR STYLE",
+				() => Mod.ToCarStyle(Config.RivalDetailType, Config.RivalOutline),
+				(value) => {
+					Config.RivalDetailType = Mod.DetailTypeFromCarStyle(value);
+					Config.RivalOutline = Mod.OutlineFromCarStyle(value);
+				},
+				carStyleEntries,
+				"Change the visual detail type of Steam Rival cars.");
+
+			/*rivalsSubmenu.FloatSlider(MenuDisplayMode.Both,
+				"setting:rival_outline_brightness",
+				"RIVAL OUTLINE BRIGHTNESS",
+				() => Config.RivalBrightness,
+				(value) => {
+
+					Config.RivalBrightness = value;
+					// Treat changes to this value as an event since we don't have many other options for detecting if our own menu is closed.
+					//  (GSL never broadcasts the Events.GUI.MenuClosed static event)
+					Events.ReplayOptionsMenu.MenuClose.Broadcast(null);
+				},
+				0.05f, 100_000f,
+				1f,
+				"Change the brightness for Steam Rival car outlines.");*/
+
+			// Use an InputPrompt to reduce the strain on constantly changing the setting and causing all rival cars to update their outline.
+			rivalsSubmenu.InputPrompt(MenuDisplayMode.Both,
+				"setting:rival_outline_brightness_input",
+				"RIVAL OUTLINE BRIGHTNESS",
+				(value) => {
+					if (float.TryParse(value, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
+					{
+						// Allow extremely high outline brightness (which doesn't affect outline itself, but does affect jets and wings).
+						// Anything higher than 100,000 will produce black splotches from the intensity.
+						result = Math.Max(0.05f, Math.Min(100_000f, result));
+						if (Config.RivalBrightness != result)
+						{
+							Config.RivalBrightness = result;
+
+							// Treat changes to this value as an event since we don't have many other options for detecting if our own menu is closed.
+							//  (GSL never broadcasts the Events.GUI.MenuClosed static event)
+							// It's important to broadcast this so that outline brightnesses can be updated mid-game.
+							Events.ReplayOptionsMenu.MenuClose.Broadcast(null);
+							Logger.Debug($"RIVAl OUTLINE BRIGHTNESS: Value changed to {Config.RivalBrightness}");
+						}
+					}
+					else
+					{
+						Logger.Warning("RIVAL OUTLINE BRIGHTNESS: Invalid floating point value");
+					}
+				},
+				null,
+				null,
+				"ENTER OUTLINE BRIGHTNESS",
+				null,
+				"Change the brightness for Steam Rival car outlines." +
+				" NOTE: Brightness values higher than 1.0 will only increase the intensity of flames and wing trails.")
+				.WithDefaultValue(() => Config.RivalBrightness.ToString()); // Need to use this since there's no method for function defaults.
+
+			return rivalsSubmenu;
 		}
 
 		#region Transpiler Helper Methods
@@ -398,6 +526,42 @@ namespace Distance.ReplayIntensifies
 			if (compoundData.HasOutline)
 			{
 				playerDataReplay.CreateCarOutline();
+			}
+		}
+
+		/// <summary>
+		/// Changes the leaderboard button color when using highlighting for Steam Rivals.
+		/// </summary>
+		/// <remarks>
+		/// This exists because this functionality is needed in two different patches.
+		/// </remarks>
+		public static void UpdateLeaderboardButtonColor(LevelSelectLeaderboardButton button, bool force)
+		{
+			if (!Mod.Instance.Config.EnableSteamRivals || !Mod.Instance.Config.HighlightRivalsInLeaderboards)
+			{
+				return;
+			}
+
+			LevelSelectLeaderboardMenu.Entry entry = button.entry_ as LevelSelectLeaderboardMenu.Entry;
+
+			Color color = (!entry.info_.isLocal_) ? Color.white : LevelSelectLeaderboardButton.localColor_;
+			bool isRival = false;
+
+			if (!entry.info_.isLocal_ && entry.leaderboardEntry_ is SteamworksLeaderboard.Entry steamEntry)
+			{
+				ulong steamID = SteamworksHelper.GetLeaderboardEntrySteamID(steamEntry);
+				if (Mod.Instance.Config.IsSteamRival(steamID, true))
+				{
+					color = ColorEx.HexToColor("9480E7"); // Same as sprint campaign level set color (might be a little dark)
+					isRival = true;
+				}
+			}
+
+			if (isRival || force)
+			{
+				button.SetLabelColor(button.nameLabel_, color);
+				button.SetLabelColor(button.placeLabel_, color);
+				button.SetLabelColor(button.dataLabel_, color);
 			}
 		}
 

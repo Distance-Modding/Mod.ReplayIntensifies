@@ -14,7 +14,7 @@ namespace Distance.ReplayIntensifies.Harmony
 	/// Additionally calls <see cref="Mod.CreateCarOutline(PlayerDataReplay)"/> for Replay-style car rendering.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Car Visual Style (part 3/4).
+	/// Required For: Car Visual Style (part 3/5).
 	/// </remarks>
 	[HarmonyPatch(typeof(PlayerDataReplay), nameof(PlayerDataReplay.InitCarBlueprintVirtual))]
 	internal static class PlayerDataReplay__InitCarBlueprintVirtual
@@ -25,7 +25,7 @@ namespace Distance.ReplayIntensifies.Harmony
 			__state = null;
 
 			var compoundData = __instance.GetComponent<PlayerDataReplayCompoundData>();
-
+			if (compoundData)
 			{
 				// Backup then change `simulateNetworkCar_` state.
 				__state = PlayerDataReplay.simulateNetworkCar_;
