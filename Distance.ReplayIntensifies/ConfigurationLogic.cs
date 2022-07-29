@@ -80,13 +80,21 @@ namespace Distance.ReplayIntensifies
 		}
 
 		private const string MinDetailLevel_ID = "visual.min_level_of_detail";
-		public CarLevelOfDetail.Level MinLevelOfDetail
+		/*public CarLevelOfDetail.Level MinLevelOfDetail
 		{
 			get => Get<CarLevelOfDetail.Level>(MinDetailLevel_ID);
 			set
 			{
 				Set(MinDetailLevel_ID, value);
 				this.MinLevelOfDetailCached = value;
+			}
+		}*/
+		// NOTE: Min LOD has to be removed due to affecting the level environment.
+		public CarLevelOfDetail.Level MinLevelOfDetail
+		{
+			get => CarLevelOfDetail.Level.Speck;
+			set
+			{
 			}
 		}
 
@@ -168,7 +176,15 @@ namespace Distance.ReplayIntensifies
 
 		// Cached property values for faster accessing.
 		public CarLevelOfDetail.Level MaxLevelOfDetailCached { get; private set; }
-		public CarLevelOfDetail.Level MinLevelOfDetailCached { get; private set; }
+		//public CarLevelOfDetail.Level MinLevelOfDetailCached { get; private set; }
+		// NOTE: Min LOD has to be removed due to affecting the level environment.
+		public CarLevelOfDetail.Level MinLevelOfDetailCached
+		{
+			get => CarLevelOfDetail.Level.Speck;
+			set
+			{
+			}
+		}
 
 		#endregion
 

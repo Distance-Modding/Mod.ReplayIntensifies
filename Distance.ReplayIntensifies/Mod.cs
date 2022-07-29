@@ -222,7 +222,11 @@ namespace Distance.ReplayIntensifies
 				"setting:max_auto_replays",
 				"MAX AUTO REPLAYS",
 				() => G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_,
-				(value) => G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_ = value,
+				(value) => {
+					G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_ = value;
+					// Make sure to save changes, since ReplaySettings only saves after its own menu is closed.
+					G.Sys.OptionsManager_.Replay_.Save();
+				},
 				1, Mod.MaxReplaysAtAll,
 				5,
 				"Maximum number of ghosts that will auto-load when playing a level. This is the [i]GHOSTS IN ARCADE COUNT[/i] option from the Replays menu, and is included here for convenience.");
@@ -288,14 +292,23 @@ namespace Distance.ReplayIntensifies
 				"Change the highest level of detail that opponent cars will render with." +
 				" Lowering Max Level of Detail can improve performance when playing with more ghosts.");
 
-			settingsMenu.ListBox<CarLevelOfDetail.Level>(MenuDisplayMode.Both,
+			// NOTE: Min LOD has to be removed due to affecting the level environment.
+			/*settingsMenu.ListBox<CarLevelOfDetail.Level>(MenuDisplayMode.Both,
 				"setting:min_level_of_detail",
 				"MIN CAR LEVEL OF DETAIL",
 				() => Config.MinLevelOfDetail,
 				(value) => Config.MinLevelOfDetail = value,
 				detailLevelEntries,
 				"Change the lowest level of detail that opponent cars will render with." +
-				" Raising Min Level of Detail can decrease performance when playing with more ghosts.");
+				" Raising Min Level of Detail can decrease performance when playing with more ghosts.");*/
+
+			settingsMenu.CheckBox(MenuDisplayMode.Both,
+				"setting:enable_unrestricted_colors",
+				"ENABLE UNRESTRICTED OPPONENT COLORS",
+				() => Config.EnableUnrestrictedOpponentColors,
+				(value) => Config.EnableUnrestrictedOpponentColors = value,
+				"Online opponents and non-[i]Ghost Detail Type[/i] cars will NOT have their colors clamped, allowing for extremely bright cars." +
+				" Bright cars are made by editing color preset files and changing the color channels to very large values.");
 
 
 			// Page 2
@@ -311,14 +324,6 @@ namespace Distance.ReplayIntensifies
 					"EXPERIMENTAL: Steam Rivals are users who're given their own ghost car style, so that you can spot your [i]true[/i] opponent from far away." +
 					" Users can be changed from the level select leaderboards menu, or by editing Settings/Config.json.");
 			//}
-
-			settingsMenu.CheckBox(MenuDisplayMode.Both,
-				"setting:enable_unrestricted_colors",
-				"ENABLE UNRESTRICTED OPPONENT COLORS",
-				() => Config.EnableUnrestrictedOpponentColors,
-				(value) => Config.EnableUnrestrictedOpponentColors = value,
-				"Online opponents and non-[i]Ghost Detail Type[/i] cars will NOT have their colors clamped, allowing for extremely bright cars." +
-				" Bright cars are made by editing color preset files and changing the color channels to very large values.");
 
 
 			Menus.AddNew(MenuDisplayMode.Both, settingsMenu,
