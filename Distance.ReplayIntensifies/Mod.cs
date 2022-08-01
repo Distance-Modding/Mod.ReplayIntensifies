@@ -34,6 +34,13 @@ namespace Distance.ReplayIntensifies
 
 		public const int MinOnlineLeaderboards = 15;
 
+		// In-Focus LODs are only used for the replay car with camera focus.
+		// Unfocused cars should never have an LOD higher than Near. And having a lower max LOD is only
+		//  necessary for unfocused cars, so remove these options and exclude both In-Focus's from Max LOD checks.
+		public const CarLevelOfDetail.Level MaxMaxLevelOfDetail = CarLevelOfDetail.Level.Near; // Below In-Focus.
+		public const CarLevelOfDetail.Level MinMaxLevelOfDetail = CarLevelOfDetail.Level.Speck; // or VeryFar
+		public const CarLevelOfDetail.Level MaxMinLevelOfDetail = CarLevelOfDetail.Level.InFocus; // Allow forcing up to In-Focus
+
 
 
 		public static Mod Instance { get; private set; }
@@ -195,7 +202,7 @@ namespace Distance.ReplayIntensifies
 				{ "Replay",    CarLevelOfDetail.Type.Replay },    // 1
 			};*/
 
-			Dictionary<string, CarLevelOfDetail.Level> detailLevelEntries = new Dictionary<string, CarLevelOfDetail.Level>
+			/*Dictionary<string, CarLevelOfDetail.Level> detailLevelEntries = new Dictionary<string, CarLevelOfDetail.Level>
 			{
 				{ "In-Focus (First Person)", CarLevelOfDetail.Level.InFocusFP }, // 0
 				{ "In-Focus",                CarLevelOfDetail.Level.InFocus },   // 1
@@ -204,7 +211,33 @@ namespace Distance.ReplayIntensifies
 				{ "Far",                     CarLevelOfDetail.Level.Far },       // 4
 				{ "Very Far",                CarLevelOfDetail.Level.VeryFar },   // 5
 				{ "Speck",                   CarLevelOfDetail.Level.Speck },     // 6
+			};*/
+
+			Dictionary<string, CarLevelOfDetail.Level> detailLevelEntries = new Dictionary<string, CarLevelOfDetail.Level>
+			{
+				{ "Very Low",                CarLevelOfDetail.Level.Speck },     // 6
+				{ "Low",                     CarLevelOfDetail.Level.VeryFar },   // 5
+				{ "Medium",                  CarLevelOfDetail.Level.Far },       // 4
+				{ "High",                    CarLevelOfDetail.Level.Medium },    // 3
+				{ "Ultra",                   CarLevelOfDetail.Level.Near },      // 2
+				{ "Ultra (In-Focus)",        CarLevelOfDetail.Level.InFocus },   // 1
+				{ "Ultra (First Person)",    CarLevelOfDetail.Level.InFocusFP }, // 0
 			};
+
+			var maxDetailLevelEntries = new Dictionary<string, CarLevelOfDetail.Level>(detailLevelEntries);
+			var minDetailLevelEntries = new Dictionary<string, CarLevelOfDetail.Level>(detailLevelEntries);
+			// Remove unsupported LODs from min/max entries.
+			foreach (var lodPair in detailLevelEntries)
+			{
+				if (lodPair.Value < Mod.MaxMaxLevelOfDetail || lodPair.Value > Mod.MinMaxLevelOfDetail)
+				{
+					maxDetailLevelEntries.Remove(lodPair.Key);
+				}
+				if (lodPair.Value < Mod.MaxMinLevelOfDetail)
+				{
+					minDetailLevelEntries.Remove(lodPair.Key);
+				}
+			}
 
 
 
@@ -288,27 +321,20 @@ namespace Distance.ReplayIntensifies
 				"MAX CAR LEVEL OF DETAIL",
 				() => Config.MaxLevelOfDetail,
 				(value) => Config.MaxLevelOfDetail = value,
-				detailLevelEntries,
+				maxDetailLevelEntries,
 				"Change the highest level of detail that opponent cars will render with." +
 				" Lowering Max Level of Detail can improve performance when playing with more ghosts.");
 
 			// NOTE: Min LOD has to be removed due to affecting the level environment.
-			/*settingsMenu.ListBox<CarLevelOfDetail.Level>(MenuDisplayMode.Both,
+			settingsMenu.ListBox<CarLevelOfDetail.Level>(MenuDisplayMode.Both,
 				"setting:min_level_of_detail",
 				"MIN CAR LEVEL OF DETAIL",
 				() => Config.MinLevelOfDetail,
 				(value) => Config.MinLevelOfDetail = value,
-				detailLevelEntries,
+				minDetailLevelEntries,
 				"Change the lowest level of detail that opponent cars will render with." +
-				" Raising Min Level of Detail can decrease performance when playing with more ghosts.");*/
-
-			settingsMenu.CheckBox(MenuDisplayMode.Both,
-				"setting:enable_unrestricted_colors",
-				"ENABLE UNRESTRICTED OPPONENT COLORS",
-				() => Config.EnableUnrestrictedOpponentColors,
-				(value) => Config.EnableUnrestrictedOpponentColors = value,
-				"Online opponents and non-[i]Ghost Detail Type[/i] cars will NOT have their colors clamped, allowing for extremely bright cars." +
-				" Bright cars are made by editing color preset files and changing the color channels to very large values.");
+				" Raising Min Level of Detail can decrease performance when playing with more ghosts." +
+				" NOTE: In-Focus will force a car's LOD to be higher than normal for non-camera-focused cars.");
 
 
 			// Page 2
@@ -324,6 +350,22 @@ namespace Distance.ReplayIntensifies
 					"EXPERIMENTAL: Steam Rivals are users who're given their own ghost car style, so that you can spot your [i]true[/i] opponent from far away." +
 					" Users can be changed from the level select leaderboards menu, or by editing Settings/Config.json.");
 			//}
+
+			settingsMenu.CheckBox(MenuDisplayMode.Both,
+				"setting:enable_unrestricted_colors",
+				"ENABLE UNRESTRICTED OPPONENT COLORS",
+				() => Config.EnableUnrestrictedOpponentColors,
+				(value) => Config.EnableUnrestrictedOpponentColors = value,
+				"Online opponents and non-[i]Ghost Detail Type[/i] cars will NOT have their colors clamped, allowing for extremely bright cars." +
+				" Bright cars are made by editing color preset files and changing the color channels to very large values.");
+
+			settingsMenu.CheckBox(MenuDisplayMode.Both,
+				"setting:data_effect_in_ghost_mode",
+				"DATA EFFECT IN GHOST MODE",
+				() => Config.ShowDataEffectInGhostMode,
+				(value) => Config.ShowDataEffectInGhostMode = value,
+				"The data materialization spawn effect will be used when racing non-ghost cars.");
+
 
 
 			Menus.AddNew(MenuDisplayMode.Both, settingsMenu,
@@ -504,18 +546,47 @@ namespace Distance.ReplayIntensifies
 		/// This exists because it was difficult to correctly patch the <see cref="PlayerDataBase.GetClampCarColors"/>
 		/// property.
 		/// </remarks>
-		public static bool GetClampCarColors(PlayerDataBase instance)
+		public static bool GetClampCarColors(PlayerDataBase playerDataBase)
 		{
-			bool result = instance.ClampCarColors_;
-			if (result && Mod.Instance.Config.EnableUnrestrictedOpponentColors)
+			bool result = playerDataBase.ClampCarColors_;
+			if (result && playerDataBase is PlayerDataOpponent)
 			{
-				if (instance is PlayerDataOpponent)
-				{
-					//Mod.Instance.Logger.Info("GetClampCarColors: instance is PlayerDataOpponent");
-					return false;
-				}
+				//Mod.Instance.Logger.Debug("GetClampCarColors: playerDataBase is PlayerDataOpponent");
+				return !Mod.Instance.Config.EnableUnrestrictedOpponentColors;
 			}
 			return result;
+		}
+
+		/// <summary>
+		/// Handles situations where a replay car needs to know if its visually a ghost (rather than functionally).
+		/// </summary>
+		/// <remarks>
+		/// This exists to avoid code duplication between multiple transpilers.
+		/// </remarks>
+		public static bool GetIsGhostVisual(PlayerDataReplay playerDataReplay)
+		{
+			var compoundData = playerDataReplay.GetComponent<PlayerDataReplayCompoundData>();
+			if (compoundData)
+			{
+				return compoundData.IsGhostVisual;
+			}
+			return playerDataReplay.IsGhost_;
+		}
+
+		/// <summary>
+		/// Handles updating a replay player's brightness to conform to this mod's settings.
+		/// </summary>
+		/// <remarks>
+		/// This exists to avoid code duplication between multiple transpilers.
+		/// </remarks>
+		public static float GetGhostBrightness(PlayerDataReplay playerDataReplay)
+		{
+			var compoundData = playerDataReplay.GetComponent<PlayerDataReplayCompoundData>();
+			if (compoundData)
+			{
+				return compoundData.GetOutlineBrightness();
+			}
+			return playerDataReplay.replaySettings_.GhostBrightness_;
 		}
 
 		/// <summary>
@@ -532,6 +603,19 @@ namespace Distance.ReplayIntensifies
 			{
 				playerDataReplay.CreateCarOutline();
 			}
+		}
+
+		/// <summary>
+		/// Determines if the data materialization effect should not be used when spawning a replay/ghost car.
+		/// </summary>
+		public static bool GetDontShowDataEffect(PlayerDataReplay playerDataReplay)
+		{
+			var compoundData = playerDataReplay.GetComponent<PlayerDataReplayCompoundData>();
+			if (compoundData)
+			{
+				return !compoundData.ShowDataEffect;
+			}
+			return playerDataReplay.IsGhost_; // Default behavior.
 		}
 
 		/// <summary>

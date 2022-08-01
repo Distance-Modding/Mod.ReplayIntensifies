@@ -90,7 +90,9 @@
     <Compile Include="Harmony\Assembly-CSharp\LevelSelectLeaderboardButton\OnDisplayedVirtual.cs" />
     <Compile Include="Harmony\Assembly-CSharp\LevelSelectLeaderboardMenu\Display.cs" />
     <Compile Include="Harmony\Assembly-CSharp\LevelSelectLeaderboardMenu\Update.cs" />
-    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\CreatePlayerDataReplay.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\get_CarScreenType_.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\get_CreateCarScreen_.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\InitCarVirtual.cs" />
     <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\OnEventReplayOptionsMenuClosed.cs" />
     <Compile Include="Helpers\SteamworksHelper.cs" />
     <Compile Include="Scripts\PlayerDataReplayCompoundData.cs" />

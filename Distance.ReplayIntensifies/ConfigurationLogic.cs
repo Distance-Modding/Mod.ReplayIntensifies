@@ -71,30 +71,36 @@ namespace Distance.ReplayIntensifies
 		private const string MaxDetailLevel_ID = "visual.max_level_of_detail";
 		public CarLevelOfDetail.Level MaxLevelOfDetail
 		{
-			get => Get<CarLevelOfDetail.Level>(MaxDetailLevel_ID);
+			get
+			{
+				var value = Get<CarLevelOfDetail.Level>(MaxDetailLevel_ID);
+				if (value < Mod.MaxMaxLevelOfDetail) value = Mod.MaxMaxLevelOfDetail;
+				if (value > Mod.MinMaxLevelOfDetail) value = Mod.MinMaxLevelOfDetail;
+				return value;
+			}
 			set
 			{
+				if (value < Mod.MaxMaxLevelOfDetail) value = Mod.MaxMaxLevelOfDetail;
+				if (value > Mod.MinMaxLevelOfDetail) value = Mod.MinMaxLevelOfDetail;
 				Set(MaxDetailLevel_ID, value);
 				this.MaxLevelOfDetailCached = value;
 			}
 		}
 
 		private const string MinDetailLevel_ID = "visual.min_level_of_detail";
-		/*public CarLevelOfDetail.Level MinLevelOfDetail
-		{
-			get => Get<CarLevelOfDetail.Level>(MinDetailLevel_ID);
-			set
-			{
-				Set(MinDetailLevel_ID, value);
-				this.MinLevelOfDetailCached = value;
-			}
-		}*/
-		// NOTE: Min LOD has to be removed due to affecting the level environment.
 		public CarLevelOfDetail.Level MinLevelOfDetail
 		{
-			get => CarLevelOfDetail.Level.Speck;
+			get
+			{
+				var value = Get<CarLevelOfDetail.Level>(MinDetailLevel_ID);
+				if (value < Mod.MaxMinLevelOfDetail) value = Mod.MaxMinLevelOfDetail;
+				return value;
+			}
 			set
 			{
+				if (value < Mod.MaxMinLevelOfDetail) value = Mod.MaxMinLevelOfDetail;
+				Set(MinDetailLevel_ID, value);
+				this.MinLevelOfDetailCached = value;
 			}
 		}
 
@@ -103,6 +109,13 @@ namespace Distance.ReplayIntensifies
 		{
 			get => Get<bool>(EnableUnrestrictedOpponentColors_ID);
 			set => Set(EnableUnrestrictedOpponentColors_ID, value);
+		}
+
+		private const string ShowDataEffectInGhostMode_ID = "visual.data_effect_in_ghost_mode";
+		public bool ShowDataEffectInGhostMode
+		{
+			get => Get<bool>(ShowDataEffectInGhostMode_ID);
+			set => Set(ShowDataEffectInGhostMode_ID, value);
 		}
 
 
@@ -176,15 +189,7 @@ namespace Distance.ReplayIntensifies
 
 		// Cached property values for faster accessing.
 		public CarLevelOfDetail.Level MaxLevelOfDetailCached { get; private set; }
-		//public CarLevelOfDetail.Level MinLevelOfDetailCached { get; private set; }
-		// NOTE: Min LOD has to be removed due to affecting the level environment.
-		public CarLevelOfDetail.Level MinLevelOfDetailCached
-		{
-			get => CarLevelOfDetail.Level.Speck;
-			set
-			{
-			}
-		}
+		public CarLevelOfDetail.Level MinLevelOfDetailCached { get; private set; }
 
 		#endregion
 
@@ -199,18 +204,6 @@ namespace Distance.ReplayIntensifies
 			return (isGhost) ? this.GhostDetailType : this.ReplayDetailType;
 		}
 
-		/*public void SetCarDetailType(bool isGhost, CarLevelOfDetail.Type value)
-		{
-			if (isGhost)
-			{
-				this.GhostDetailType = value;
-			}
-			else
-			{
-				this.ReplayDetailType = value;
-			}
-		}*/
-
 		public bool GetCarOutline(bool isGhost, bool isCarRival)
 		{
 			if (isCarRival)
@@ -219,18 +212,6 @@ namespace Distance.ReplayIntensifies
 			}
 			return (isGhost) ? this.GhostOutline : this.ReplayOutline;
 		}
-
-		/*public void SetCarOutline(bool isGhost, bool value)
-		{
-			if (isGhost)
-			{
-				this.GhostOutline = value;
-			}
-			else
-			{
-				this.ReplayOutline = value;
-			}
-		}*/
 
 		// Determines if this car should be displayed as a Steam Rival (which accounts for settings like 'Use rival style for ghosts/replays', etc.).
 		public bool IsCarSteamRival(bool isGhost, long userID) => IsCarSteamRival(isGhost, unchecked((ulong)userID));
@@ -347,9 +328,11 @@ namespace Distance.ReplayIntensifies
 			Get(GhostDetailType_ID, CarLevelOfDetail.Type.Ghost);
 			Get(ReplayOutline_ID, false);
 			Get(ReplayDetailType_ID, CarLevelOfDetail.Type.Replay);
-			this.MaxLevelOfDetailCached = Get(MaxDetailLevel_ID, CarLevelOfDetail.Level.InFocusFP);
-			this.MinLevelOfDetailCached = Get(MinDetailLevel_ID, CarLevelOfDetail.Level.Speck);
+			// Assign back to non-cached properties to handle automatic clamping and caching.
+			this.MaxLevelOfDetail = Get(MaxDetailLevel_ID, Mod.MaxMaxLevelOfDetail);
+			this.MinLevelOfDetail = Get(MinDetailLevel_ID, CarLevelOfDetail.Level.Speck);
 			Get(EnableUnrestrictedOpponentColors_ID, false);
+			Get(ShowDataEffectInGhostMode_ID, false);
 
 			// Experimental (disabled by default)
 			Get(EnableSteamRivals_ID, false);

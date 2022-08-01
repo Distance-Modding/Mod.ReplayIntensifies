@@ -1,6 +1,5 @@
 ﻿using Distance.ReplayIntensifies.Scripts;
 using HarmonyLib;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -10,66 +9,55 @@ using UnityEngine;
 namespace Distance.ReplayIntensifies.Harmony
 {
 	/// <summary>
-	/// Patch to change the value of <see cref="PlayerDataReplay.simulateNetworkCar_"/> for the duration of the function.
-	/// Additionally calls <see cref="Mod.CreateCarOutline(PlayerDataReplay)"/> for Replay-style car rendering.
+	/// Patch to change the handling for creation of the car outline.
+	/// <para/>
+	/// Also includes patch to determine whether to use the data materialization spawn effect for cars.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Car Visual Style (part 3/5).
+	/// Required For: Car Visual Style (part 4/7).
 	/// </remarks>
 	[HarmonyPatch(typeof(PlayerDataReplay), nameof(PlayerDataReplay.InitCarBlueprintVirtual))]
 	internal static class PlayerDataReplay__InitCarBlueprintVirtual
 	{
 		[HarmonyPrefix]
-		internal static void Prefix(PlayerDataReplay __instance, out bool? __state, GameObject carBlueprint)
+		internal static void Prefix(PlayerDataReplay __instance, GameObject carBlueprint)
 		{
-			__state = null;
-
 			var compoundData = __instance.GetComponent<PlayerDataReplayCompoundData>();
-			if (compoundData)
+			if (compoundData && !Mod.GetDontShowDataEffect(__instance) && !PlayerDataReplay.simulateNetworkCar_)
 			{
-				// Backup then change `simulateNetworkCar_` state.
-				__state = PlayerDataReplay.simulateNetworkCar_;
-				PlayerDataReplay.simulateNetworkCar_ = compoundData.SimulateNetworkCar;
-				if (compoundData.DetailType == CarLevelOfDetail.Type.Replay)
-				{
-					// Only case where `CreateCarOutline` wouldn't be called by the original function.
-					Mod.CreateCarOutline(__instance);
-				}
-			}
-		}
-
-		[HarmonyPostfix]
-		internal static void Postfix(bool? __state)
-		{
-			// Restore original `simulateNetworkCar_` state.
-			if (__state.HasValue)
-			{
-				PlayerDataReplay.simulateNetworkCar_ = __state.Value;
+				// Only case where `CreateCarOutline` wouldn't be called by the original function.
+				Mod.CreateCarOutline(__instance);
 			}
 		}
 
 		[HarmonyTranspiler]
 		internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
 		{
-			Mod.Instance.Logger.Info("Transpiling...");
+			var codes = new List<CodeInstruction>(instructions);
+
+			Mod.Instance.Logger.Info("Transpiling... (1/2)");
 			// VISUAL:
-			// Replace calls to `this.CreateCarOutline()` with `Mod.CreateCarOutline(this)`.
+			// Replace car outline creation with a function where creation is determined by compound data.
 			//if (this.isGhost_)
 			//{
 			//	UnityEngine.Object.DestroyImmediate(carBlueprint.GetComponent<DataEffect>());
 			//	UnityEngine.Object.DestroyImmediate(carBlueprint.GetComponent<DataEffectLogic>());
+			//
 			//	this.CreateCarOutline();
+			//	 -to-
+			//	Mod.CreateCarOutline(this);
 			//}
 			//else
 			//{
 			//	if (PlayerDataReplay.simulateNetworkCar_)
 			//	{
 			//		this.CreateCarOutline();
+			//		 -to-
+			//		Mod.CreateCarOutline(this);
 			//	}
 			//	carBlueprint.GetComponent<DataEffect>().InitBlueprint();
 			//}
 
-			var codes = new List<CodeInstruction>(instructions);
 			for (int i = 0; i < codes.Count; i++)
 			{
 				if (codes[i].opcode == OpCodes.Call && ((MethodInfo)codes[i].operand).Name == "CreateCarOutline")
@@ -84,6 +72,35 @@ namespace Distance.ReplayIntensifies.Harmony
 					// This instruction appears 2 times, so no breaking after our first find.
 				}
 			}
+
+			Mod.Instance.Logger.Info("Transpiling... (2/2)");
+			// VISUAL:
+			//if (this.isGhost_)
+			// -to-
+			//if (Mod.GetDontShowDataEffect(this))
+			//{
+			//	...
+			//}
+			//else
+			//{
+			//	...
+			//}
+
+			for (int i = 0; i < codes.Count; i++)
+			{
+				if (codes[i].opcode == OpCodes.Ldfld && ((FieldInfo)codes[i].operand).Name == "isGhost_")
+				{
+					Mod.Instance.Logger.Info($"ldfld isGhost_ @ {i}");
+
+					// Replace: ldfld isGhost_
+					// With:    call Mod.GetDontShowDataEffect
+					codes[i].opcode = OpCodes.Call;
+					codes[i].operand = typeof(Mod).GetMethod(nameof(Mod.GetDontShowDataEffect));
+
+					break;
+				}
+			}
+
 			return codes.AsEnumerable();
 		}
 	}

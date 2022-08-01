@@ -9,9 +9,11 @@ namespace Distance.ReplayIntensifies.Harmony
 {
 	/// <summary>
 	/// Patch to handle changes to the car outline brightness setting, and reflect those changes.
+	/// <para/>
+	/// Separates handling of ghost mode and ghost visual states.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Car Visual Style (part 5/5).
+	/// Required For: Car Visual Style (part 7/7).
 	/// </remarks>
 	[HarmonyPatch(typeof(PlayerDataReplay), nameof(PlayerDataReplay.OnEventReplayOptionsMenuClosed))]
 	internal static class PlayerDataReplay__OnEventReplayOptionsMenuClosed
@@ -19,10 +21,10 @@ namespace Distance.ReplayIntensifies.Harmony
 		[HarmonyPrefix]
 		internal static void Prefix(PlayerDataReplay __instance)
 		{
-			// Brightness only updated for ghosts in original method, so update it here for non-ghosts.
 			var compoundData = __instance.GetComponent<PlayerDataReplayCompoundData>();
-			if (compoundData && !__instance.IsGhost_)
+			if (compoundData)
 			{
+				// Lazily ensure brightness is always updated in this method.
 				__instance.outlineBrightness_ = compoundData.GetOutlineBrightness();
 			}
 		}
@@ -30,17 +32,18 @@ namespace Distance.ReplayIntensifies.Harmony
 		[HarmonyTranspiler]
 		internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
 		{
-			Mod.Instance.Logger.Info("Transpiling...");
+			var codes = new List<CodeInstruction>(instructions);
+
+			Mod.Instance.Logger.Info("Transpiling... (1/2)");
 			// VISUAL:
 			// Replace outline brightness assignment with one determined by compound data.
 			//if (this.isGhost_)
 			//{
 			//	this.outlineBrightness_ = this.replaySettings_.GhostBrightness_;
 			//   -to-
-			//  this.outlineBrightness_ = GetGhostBrightness_(this);
+			//  this.outlineBrightness_ = Mod.GetGhostBrightness(this);
 			//}
 
-			var codes = new List<CodeInstruction>(instructions);
 			for (int i = 1; i < codes.Count; i++)
 			{
 				if ((codes[i - 1].opcode == OpCodes.Ldfld    && ((FieldInfo) codes[i - 1].operand).Name == "replaySettings_") &&
@@ -50,36 +53,48 @@ namespace Distance.ReplayIntensifies.Harmony
 
 					// Replace: ldfld replaySettings_
 					// Replace: callvirt get_GhostBrightness_
-					// With:    call GetGhostBrightness_
+					// With:    call Mod.GetGhostBrightness
 					codes.RemoveRange(i - 1, 2);
 					codes.InsertRange(i - 1, new CodeInstruction[]
 					{
-						new CodeInstruction(OpCodes.Call, typeof(PlayerDataReplay__OnEventReplayOptionsMenuClosed).GetMethod(nameof(GetGhostBrightness_))),
+						new CodeInstruction(OpCodes.Call, typeof(Mod).GetMethod(nameof(Mod.GetGhostBrightness))),
 					});
 
 					break;
 				}
 			}
+
+			Mod.Instance.Logger.Info("Transpiling... (2/2)");
+			// VISUAL:
+			// Change jet flame/wing trail color updating to only occur for visual ghosts.
+			//if (this.isGhost_)
+			// -to-
+			//if (Mod.GetIsGhostVisual(this))
+			//{
+			//	this.SetJetFlameColor();
+			//	this.SetWingTrailColor(this.Car_);
+			//}
+
+			for (int i = 3; i < codes.Count; i++)
+			{
+				// Check for `call SetJetFlameColor` to ensure this is the correct instance of `ldfld isGhost_`.
+				if ((codes[i - 3].opcode == OpCodes.Ldfld    && ((FieldInfo) codes[i - 3].operand).Name == "isGhost_") &&
+					(codes[i - 2].opcode == OpCodes.Brfalse) &&
+					(codes[i    ].opcode == OpCodes.Call     && ((MethodInfo)codes[i    ].operand).Name == "SetJetFlameColor"))
+				{
+					Mod.Instance.Logger.Info($"ldfld isGhost_ @ {i-3}");
+					Mod.Instance.Logger.Info($"call SetJetFlameColor @ {i}");
+
+					// Replace: ldfld isGhost_
+					// With:    call Mod.GetIsGhostVisual
+					codes[i - 3].opcode = OpCodes.Call;
+					codes[i - 3].operand = typeof(Mod).GetMethod(nameof(Mod.GetIsGhostVisual));
+
+					break;
+				}
+			}
+
 			return codes.AsEnumerable();
 		}
-
-		#region Helper Functions
-
-		// Trailing underscore added since there's no HarmonyIgnore attribute.
-		// Override for determining ghost brightness level.
-		public static float GetGhostBrightness_(PlayerDataReplay playerDataReplay)
-		{
-			var compoundData = playerDataReplay.GetComponent<PlayerDataReplayCompoundData>();
-			if (compoundData)
-			{
-				return compoundData.GetOutlineBrightness();
-			}
-			else
-			{
-				return playerDataReplay.replaySettings_.GhostBrightness_;
-			}
-		}
-
-		#endregion
 	}
 }

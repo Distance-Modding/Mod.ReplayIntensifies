@@ -15,8 +15,9 @@ This started off as a port of Reherc's [Replay Limit Breaker](https://github.com
     * **Networked** - Semi solid body that fades away when colliding with the player.
     * **Replay** - Full solid body that doesn't fade away.
     * **Outline**/**no Outline** - Show or hide the car outline color for any of the 3 above styles.
-* Change the ~~minimum and~~ maximum car Level of Detail (LOD), to help improve performance ~~or up the graphics~~.
+* Change the minimum and maximum car Level of Detail (LOD), to help improve performance or up the graphics.
 * Disable clamping opponent car colors, so that ultrabright color presets can be seen (this affects Online mode cars as well).
+* Change whether the data materialization effect for car spawning is used when racing ghosts.
 
 ### Steam Rivals
 
@@ -34,11 +35,7 @@ An experimental feature that makes selected players visually stand out when raci
 ## Known Bugs
 
 * Replay/networked style cars can only display somewhere between 12-20 car HUDs. Having more than this many opponents will prevent *any(?)* opponent car HUDs from rendering.
-* Similar to playing online, using replay/networked style cars will affect visuals in the environment like road popups, and glass panels.
-
-## Removed Options
-
-* Minimum car LOD was affecting physical aspects of the level environment, and so the setting had to be removed.
+* The NitronicCarController can cause physics instability when too many ghosts are using it at once. So a threshold has been set to disable this for ghosts when there are too many.
 
 
 ## Preview

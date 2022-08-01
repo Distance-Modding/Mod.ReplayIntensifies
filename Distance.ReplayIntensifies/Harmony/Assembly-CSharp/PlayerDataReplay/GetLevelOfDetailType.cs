@@ -1,7 +1,5 @@
 ﻿using Distance.ReplayIntensifies.Scripts;
 using HarmonyLib;
-using System;
-using UnityEngine;
 
 namespace Distance.ReplayIntensifies.Harmony
 {
@@ -9,7 +7,7 @@ namespace Distance.ReplayIntensifies.Harmony
 	/// Patch to change the value of <see cref="PlayerDataReplay.simulateNetworkCar_"/> for the duration of the function.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Car Visual Style (part 2/5).
+	/// Required For: Car Visual Style (part 3/7).
 	/// </remarks>
 	[HarmonyPatch(typeof(PlayerDataReplay), nameof(PlayerDataReplay.GetLevelOfDetailType))]
 	internal static class PlayerDataReplay__GetLevelOfDetailType

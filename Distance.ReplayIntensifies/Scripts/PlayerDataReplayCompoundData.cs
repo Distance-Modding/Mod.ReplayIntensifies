@@ -7,7 +7,8 @@ namespace Distance.ReplayIntensifies.Scripts
 	{
 		public PlayerDataReplay Player { get; internal set; }
 
-		public bool OriginalIsGhost { get; internal set; }
+		// When not in replay mode.
+		public bool IsGhostMode { get; internal set; }
 
 		public CarLevelOfDetail.Type DetailType { get; internal set; }
 
@@ -15,24 +16,14 @@ namespace Distance.ReplayIntensifies.Scripts
 
 		public bool IsRival { get; internal set; }
 
-		/*public bool IsDefault
-		{
-			get
-			{
-				if (this.OriginalIsGhost)
-				{
-					return (this.DetailType == CarLevelOfDetail.Type.Ghost && this.HasOutline);
-				}
-				else
-				{
-					return (this.DetailType == CarLevelOfDetail.Type.Replay && !this.HasOutline);
-				}
-			}
-		}*/
+		// Data materialization effect seen when a car spawns.
+		public bool ShowDataEffect { get; internal set; }
 
-		public bool SimulateNetworkCar => this.DetailType == CarLevelOfDetail.Type.Networked;
+		// This car acts like a ghost and will not affect the environment in any way.
+		// Will differ from `IsGhostMode` after the start of `InitPlayerDataReplay` if `simulateNetworkCar_` is true.
+		public bool IsGhostBehavior => this.Player.IsGhost_;
 
-		public bool IsGhost => this.DetailType == CarLevelOfDetail.Type.Ghost;
+		public bool IsGhostVisual => this.DetailType == CarLevelOfDetail.Type.Ghost;
 
 		// We want to calculate this property on the fly, since the ghost brightness setting can be changed mid-game.
 		public float GetOutlineBrightness()
@@ -53,6 +44,28 @@ namespace Distance.ReplayIntensifies.Scripts
 			{
 				return this.Player.replaySettings_.GhostBrightness_;
 			}
+		}
+
+		public static PlayerDataReplayCompoundData Create(PlayerDataReplay playerDataReplay, CarReplayData data, bool isGhost)
+		{
+			bool isRival = Mod.Instance.Config.IsCarSteamRival(isGhost, data.steamID_);
+			CarLevelOfDetail.Type detailType = Mod.Instance.Config.GetCarDetailType(isGhost, isRival);
+			bool hasOutline = Mod.Instance.Config.GetCarOutline(isGhost, isRival);
+			bool showDataEffect = Mod.Instance.Config.ShowDataEffectInGhostMode;
+
+			// This isn't assigned until the start of `InitPlayerDataReplay`, so use a local variable.
+			bool isGhostBehavior = (isGhost && !PlayerDataReplay.simulateNetworkCar_);
+
+			var compoundData = playerDataReplay.gameObject.AddComponent<PlayerDataReplayCompoundData>();
+			compoundData.Player = playerDataReplay;
+			compoundData.IsGhostMode = isGhost; // Original state
+			compoundData.DetailType = detailType;
+			compoundData.HasOutline = hasOutline;
+			compoundData.IsRival = isRival;
+			// Never show data effect for ghost visuals. Only show in ghost mode if the settings are configured to show it.
+			compoundData.ShowDataEffect = !compoundData.IsGhostVisual && (!isGhostBehavior || showDataEffect);
+
+			return compoundData;
 		}
 	}
 }

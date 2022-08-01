@@ -1,52 +1,35 @@
 ﻿using Distance.ReplayIntensifies.Scripts;
 using HarmonyLib;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
-using UnityEngine;
 
 namespace Distance.ReplayIntensifies.Harmony
 {
 	/// <summary>
-	/// Patch to change the value of <see cref="PlayerDataReplay.simulateNetworkCar_"/> for the duration of the function.
+	/// Patch to setup all data tied to handling our extended car visual styles.
 	/// <para/>
 	/// Also includes patch to handle applying the car outline brightness.
+	/// <para/>
+	/// Separates handling of ghost mode and ghost visual states.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Car Visual Style (part 4/5).
+	/// Required For: Car Visual Style (part 6/7).
 	/// </remarks>
 	[HarmonyPatch(typeof(PlayerDataReplay), nameof(PlayerDataReplay.InitPlayerDataReplay))]
 	internal static class PlayerDataReplay__InitPlayerDataReplay
 	{
 		[HarmonyPrefix]
-		internal static void Prefix(PlayerDataReplay __instance, out bool? __state, CarReplayData data, bool isGhost)
+		internal static void Prefix(PlayerDataReplay __instance, CarReplayData data, bool isGhost)
 		{
-			__state = null;
+			// Setup our compound data and all associated info used to handle the car's visual style.
+			var compoundData = PlayerDataReplayCompoundData.Create(__instance, data, isGhost);
 
-			var compoundData = __instance.GetComponent<PlayerDataReplayCompoundData>();
 			if (compoundData)
 			{
-				// Backup then change `simulateNetworkCar_` state.
-				__state = PlayerDataReplay.simulateNetworkCar_;
-				PlayerDataReplay.simulateNetworkCar_ = compoundData.SimulateNetworkCar;
-
-				// Brightness only updated for ghosts in original method, so update it here for non-ghosts.
-				if (!__instance.IsGhost_)
-				{
-					__instance.outlineBrightness_ = compoundData.GetOutlineBrightness();
-				}
-			}
-		}
-
-		[HarmonyPostfix]
-		internal static void Postfix(bool? __state)
-		{
-			// Restore original `simulateNetworkCar_` state.
-			if (__state.HasValue)
-			{
-				PlayerDataReplay.simulateNetworkCar_ = __state.Value;
+				// Lazily ensure brightness is always updated in this method.
+				__instance.outlineBrightness_ = compoundData.GetOutlineBrightness();
 			}
 		}
 
@@ -55,31 +38,42 @@ namespace Distance.ReplayIntensifies.Harmony
 		{
 			Mod.Instance.Logger.Info("Transpiling...");
 			// VISUAL:
+			// Change skidmark removal to only occur for visual ghosts.
 			// Replace outline brightness assignment with one determined by compound data.
 			//if (this.isGhost_)
+			// -to-
+			//if (Mod.GetIsGhostVisual(this))
 			//{
 			//	this.outlineBrightness_ = this.replaySettings_.GhostBrightness_;
-			//	this.skidmarkPrefab_ = null;
 			//   -to-
-			//  this.outlineBrightness_ = GetGhostBrightness_(this);
+			//  this.outlineBrightness_ = Mod.GetGhostBrightness(this);
+			//
 			//	this.skidmarkPrefab_ = null;
 			//}
 
 			var codes = new List<CodeInstruction>(instructions);
-			for (int i = 1; i < codes.Count; i++)
+			for (int i = 5; i < codes.Count; i++)
 			{
-				if ((codes[i - 1].opcode == OpCodes.Ldfld    && ((FieldInfo) codes[i - 1].operand).Name == "replaySettings_") &&
+				if ((codes[i - 5].opcode == OpCodes.Ldfld    && ((FieldInfo) codes[i - 5].operand).Name == "isGhost_") &&
+					(codes[i - 4].opcode == OpCodes.Brfalse) &&
+					(codes[i - 1].opcode == OpCodes.Ldfld    && ((FieldInfo) codes[i - 1].operand).Name == "replaySettings_") &&
 					(codes[i    ].opcode == OpCodes.Callvirt && ((MethodInfo)codes[i    ].operand).Name == "get_GhostBrightness_"))
 				{
+					Mod.Instance.Logger.Info($"ldfld isGhost_ @ {i-5}");
 					Mod.Instance.Logger.Info($"callvirt get_GhostBrightness_ @ {i}");
+
+					// Replace: ldfld isGhost_
+					// With:    call Mod.GetIsGhostVisual
+					codes[i - 5].opcode = OpCodes.Call;
+					codes[i - 5].operand = typeof(Mod).GetMethod(nameof(Mod.GetIsGhostVisual));
 
 					// Replace: ldfld replaySettings_
 					// Replace: callvirt get_GhostBrightness_
-					// With:    call GetGhostBrightness_
+					// With:    call Mod.GetGhostBrightness
 					codes.RemoveRange(i - 1, 2);
 					codes.InsertRange(i - 1, new CodeInstruction[]
 					{
-						new CodeInstruction(OpCodes.Call, typeof(PlayerDataReplay__InitPlayerDataReplay).GetMethod(nameof(GetGhostBrightness_))),
+						new CodeInstruction(OpCodes.Call, typeof(Mod).GetMethod(nameof(Mod.GetGhostBrightness))),
 					});
 
 					break;
@@ -87,24 +81,5 @@ namespace Distance.ReplayIntensifies.Harmony
 			}
 			return codes.AsEnumerable();
 		}
-
-		#region Helper Functions
-
-		// Trailing underscore added since there's no HarmonyIgnore attribute.
-		// Override for determining ghost brightness level.
-		public static float GetGhostBrightness_(PlayerDataReplay playerDataReplay)
-		{
-			var compoundData = playerDataReplay.GetComponent<PlayerDataReplayCompoundData>();
-			if (compoundData)
-			{
-				return compoundData.GetOutlineBrightness();
-			}
-			else
-			{
-				return playerDataReplay.replaySettings_.GhostBrightness_;
-			}
-		}
-
-		#endregion
 	}
 }
