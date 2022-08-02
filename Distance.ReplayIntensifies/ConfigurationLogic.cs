@@ -24,6 +24,13 @@ namespace Distance.ReplayIntensifies
 			set => Set(MaxSelectedReplays_ID, value);
 		}
 
+		private const string FillWithLocalReplays_ID = "replays.fill_with_local_replays";
+		public bool FillWithLocalReplays
+		{
+			get => Get<bool>(FillWithLocalReplays_ID);
+			set => Set(FillWithLocalReplays_ID, value);
+		}
+
 
 		private const string MaxSavedLocalReplays_ID = "leaderboards.max_saved_local_replays";
 		public int MaxSavedLocalReplays
@@ -320,6 +327,7 @@ namespace Distance.ReplayIntensifies
 			// Assign default settings (if not already assigned).
 			Get(EnableSeparateMaxForSelectedReplays_ID, false);
 			Get(MaxSelectedReplays_ID, 20);
+			Get(FillWithLocalReplays_ID, false);
 
 			Get(MaxSavedLocalReplays_ID, 500);
 			Get(MaxOnlineLeaderboards_ID, 1000);

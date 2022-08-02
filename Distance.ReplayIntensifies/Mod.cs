@@ -366,6 +366,13 @@ namespace Distance.ReplayIntensifies
 				(value) => Config.ShowDataEffectInGhostMode = value,
 				"The data materialization spawn effect will be used when racing non-ghost cars.");
 
+			settingsMenu.CheckBox(MenuDisplayMode.Both,
+				"setting:fill_with_local_replays",
+				"FILL WITH LOCAL REPLAYS",
+				() => Config.FillWithLocalReplays,
+				(value) => Config.FillWithLocalReplays = value,
+				"Fill remaining auto slots with local replays when there aren't enough online replays to load.");
+
 
 
 			Menus.AddNew(MenuDisplayMode.Both, settingsMenu,

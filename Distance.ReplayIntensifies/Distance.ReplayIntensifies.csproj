@@ -94,6 +94,7 @@
     <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\get_CreateCarScreen_.cs" />
     <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\InitCarVirtual.cs" />
     <Compile Include="Harmony\Assembly-CSharp\PlayerDataReplay\OnEventReplayOptionsMenuClosed.cs" />
+    <Compile Include="Harmony\Assembly-CSharp\ReplayManager\OnLoadedOnlineReplaysDownloadFinished.cs" />
     <Compile Include="Helpers\SteamworksHelper.cs" />
     <Compile Include="Scripts\PlayerDataReplayCompoundData.cs" />
     <Compile Include="Harmony\Assembly-CSharp\CarLevelOfDetail\SetLevelOfDetail.cs" />

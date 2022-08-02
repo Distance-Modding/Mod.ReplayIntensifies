@@ -18,6 +18,7 @@ This started off as a port of Reherc's [Replay Limit Breaker](https://github.com
 * Change the minimum and maximum car Level of Detail (LOD), to help improve performance or up the graphics.
 * Disable clamping opponent car colors, so that ultrabright color presets can be seen (this affects Online mode cars as well).
 * Change whether the data materialization effect for car spawning is used when racing ghosts.
+* Fill remaining auto slots with local replays when there aren't enough online replays to load.
 
 ### Steam Rivals
 
