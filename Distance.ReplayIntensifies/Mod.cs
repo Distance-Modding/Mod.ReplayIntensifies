@@ -1,6 +1,7 @@
 ﻿using Centrifuge.Distance.Game;
 using Centrifuge.Distance.GUI.Data;
 using Distance.ReplayIntensifies.Helpers;
+using Distance.ReplayIntensifies.Randomizer;
 using Distance.ReplayIntensifies.Scripts;
 using Reactor.API.Attributes;
 using Reactor.API.Interfaces.Systems;
@@ -351,6 +352,12 @@ namespace Distance.ReplayIntensifies
 					" Users can be changed from the level select leaderboards menu, or by editing Settings/Config.json.");
 			//}
 
+			settingsMenu.SubmenuButton(MenuDisplayMode.Both,
+				"submenu:randomized_cars",
+				"RANDOMIZED CARS SETTINGS", // "\u25B6" Black right-pointing triangle
+				CreateRandomizedCarsSubmenu(),
+				"Randomized cars allows changing up the cars and colors used by opponents. This can be useful when racing against local replays that all use the same car.");
+
 			settingsMenu.CheckBox(MenuDisplayMode.Both,
 				"setting:enable_unrestricted_colors",
 				"ENABLE UNRESTRICTED OPPONENT COLORS",
@@ -364,7 +371,7 @@ namespace Distance.ReplayIntensifies
 				"DATA EFFECT IN GHOST MODE",
 				() => Config.ShowDataEffectInGhostMode,
 				(value) => Config.ShowDataEffectInGhostMode = value,
-				"The data materialization spawn effect will be used when racing non-ghost cars.");
+				"The data materialization spawn/finish-despawn effect will be used when racing non-ghost cars.");
 
 			settingsMenu.CheckBox(MenuDisplayMode.Both,
 				"setting:fill_with_local_replays",
@@ -480,6 +487,183 @@ namespace Distance.ReplayIntensifies
 				.WithDefaultValue(() => Config.RivalBrightness.ToString()); // Need to use this since there's no method for function defaults.
 
 			return rivalsSubmenu;
+		}
+
+		private MenuTree CreateRandomizedCarsSubmenu()
+		{
+			MenuTree randomSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random", "Randomized Cars");
+
+			// Page 1
+			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_enabled",
+				"ENABLE RANDOMIZED CARS",
+				() => Config.EnableRandomizedCars,
+				(value) => Config.EnableRandomizedCars = value,
+				"Enable the randomized cars feature, allowing for more variety with opponents.");
+
+			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_fixed",
+				"FIXED RANDOMNESS",
+				() => Config.FixedRandomness,
+				(value) => Config.FixedRandomness = value,
+				"Individual replays will always use the same random seed, allowing to identify specific cars across multiple runs.");
+
+			randomSubmenu.InputPrompt(MenuDisplayMode.Both,
+				"setting:extra_randomness",
+				"EXTRA RANDOMNESS SEED",
+				(value) => {
+					if (string.IsNullOrEmpty(value))
+					{
+						// Don't change
+					}
+					else if (value == "*") // Generate a random number.
+					{
+						var rng = new System.Random();
+						// System.Random.Next() only generates something like a 30-bit integer,
+						//  so cut that in half and use two random numbers for the LOWORD and HIWORD.
+						Config.ExtraRandomnessSeed = unchecked(((uint)rng.Next() & 0xffffu) | (((uint)rng.Next() & 0xffffu) << 16));
+					}
+					else if (uint.TryParse(value, System.Globalization.NumberStyles.AllowHexSpecifier, null, out uint result))
+					{
+						Config.ExtraRandomnessSeed = result;
+					}
+					else
+					{
+						Logger.Warning("EXTRA RANDOMNESS SEED: Invalid 32-bit unsigned integer value");
+					}
+				},
+				null,
+				null,
+				"ENTER A NUMBER",
+				null,
+				"Change up the seeds for replays when using FIXED RANDOMNESS." +
+				$" Enter a number between 0 and {uint.MaxValue} (0x{uint.MaxValue:X8}). Or enter * to generate a random number.")
+				.WithDefaultValue(() => Config.ExtraRandomnessSeed.ToString());
+
+
+			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_offline_cars",
+				"USE RANDOM LOCAL CARS",
+				() => Config.RandomOfflineCars,
+				(value) => Config.RandomOfflineCars = value,
+				"Local leaderboards cars will be randomized.");
+
+			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_online_cars",
+				"USE RANDOM ONLINE CARS",
+				() => Config.RandomOnlineCars,
+				(value) => Config.RandomOnlineCars = value,
+				"Online leaderboards cars will be randomized.");
+
+			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_rival_cars",
+				"USE RANDOM RIVAL CARS",
+				() => Config.RandomRivalCars,
+				(value) => Config.RandomRivalCars = value,
+				"Rival cars will be randomized (STEAM RIVALS feature must be enabled).");
+
+			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_respect_backer_cars",
+				"RESPECT KICKSTARTER BACKERS",
+				() => Config.RespectBackerCars,
+				(value) => Config.RespectBackerCars = value,
+				$"Disable randomizing online replays that use the '{RandomCarType.BackerCar}' Kickstarter backer car.");
+
+
+			randomSubmenu.SubmenuButton(MenuDisplayMode.Both,
+				"submenu:random_car_types",
+				"RANDOM CAR TYPE SETTINGS",
+				CreateRandomizedCarTypesSubmenu(),
+				"Settings for which cars can be randomly chosen based on weighted values." +
+				" Specific custom cars can be given their own weights by editing Settings/Config.json.");
+
+			randomSubmenu.SubmenuButton(MenuDisplayMode.Both,
+				"submenu:random_car_colors",
+				"RANDOM CAR COLOR SETTINGS",
+				CreateRandomizedCarColorsSubmenu(),
+				"Settings for how random colors are decided for cars.");
+
+			return randomSubmenu;
+		}
+
+		private MenuTree CreateRandomizedCarTypesSubmenu()
+		{
+			MenuTree randomCarTypesSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random.car_types", "Randomized Car Types");
+
+			Dictionary<string, RandomCarMethod> carMethods = RandomCarMethodExtensions.GetSupportedMethodsList()
+																					  .ToDictionary(m => m.GetSettingName());
+
+			randomCarTypesSubmenu.ListBox<RandomCarMethod>(MenuDisplayMode.Both,
+				"setting:random_car_method",
+				"RANDOM CAR METHOD",
+				() => Config.RandomCarMethod,
+				(value) => Config.RandomCarMethod = value,
+				carMethods,
+				"Choose how car types will be decided. Cycle will randomly cycle through all car types before choosing duplicates.");
+
+			foreach (var carDefaultWeightPair in RandomCarType.VanillaCarChances)
+			{
+				string carName = carDefaultWeightPair.Key;
+				float defaultValue = carDefaultWeightPair.Value;
+				randomCarTypesSubmenu.FloatSlider(MenuDisplayMode.Both,
+					"setting:random_car_chance:" + carName,
+					carName.ToUpper() + " CHANCE",
+					() => Config.GetCarTypeChance(carName),
+					(value) => Config.SetCarTypeChance(carName, value),
+					0.0f, 1.0f,
+					defaultValue,
+					$"The weighted chance that '{carName}' will be randomly chosen (0.0 to ignore this car).");
+			}
+
+			randomCarTypesSubmenu.FloatSlider(MenuDisplayMode.Both,
+				"setting:random_custom_cars_chance",
+				"CUSTOM CARS CHANCE",
+				() => Config.RandomCustomCarsChance,
+				(value) => Config.RandomCustomCarsChance = value,
+				0.0f, 1.0f,
+				0.0f,
+				"The weighted chance that any custom car will be randomly chosen (0.0 to ignore custom cars, skips custom cars manually added in Settings/Config.json).");
+
+			randomCarTypesSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_custom_cars_chance_individual",
+				"INDIVIDUAL CUSTOM CARS CHANCE",
+				() => Config.IndividualRandomCustomCarsChance,
+				(value) => Config.IndividualRandomCustomCarsChance = value,
+				"All custom cars will be given the same weighted chance of appearing, rather than splitting the weight among all custom cars.");
+
+			randomCarTypesSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_car_by_placement",
+				"RANDOM CAR BY PLACEMENT",
+				() => Config.RandomColorByPlacement,
+				(value) => Config.RandomColorByPlacement = value,
+				"Random car types will always be chosen by using the replay's placement as the seed (overrides FIXED RANDOMNESS setting).");
+
+			return randomCarTypesSubmenu;
+		}
+
+		private MenuTree CreateRandomizedCarColorsSubmenu()
+		{
+			MenuTree randomCarColorsSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random.car_colors", "Randomized Car Colors");
+
+			Dictionary<string, RandomColorMethod> colorMethods = RandomColorMethodExtensions.GetSupportedMethodsList()
+																							.ToDictionary(m => m.GetSettingName());
+
+			randomCarColorsSubmenu.ListBox<RandomColorMethod>(MenuDisplayMode.Both,
+				"setting:random_color_method",
+				"RANDOM COLOR METHOD",
+				() => Config.RandomColorMethod,
+				(value) => Config.RandomColorMethod = value,
+				colorMethods,
+				"Choose how car colors will be decided. Cycle will randomly cycle through all color presets before choosing duplicates.");
+
+			randomCarColorsSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_colors_by_placement",
+				"RANDOM COLORS BY PLACEMENT",
+				() => Config.RandomColorByPlacement,
+				(value) => Config.RandomColorByPlacement = value,
+				"Random car colors will always be chosen by using the replay's placement as the seed (overrides FIXED RANDOMNESS setting).");
+
+			return randomCarColorsSubmenu;
 		}
 
 		#region Transpiler Helper Methods

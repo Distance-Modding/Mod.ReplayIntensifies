@@ -1,4 +1,4 @@
-﻿using System;
+﻿using Distance.ReplayIntensifies.Helpers;
 using UnityEngine;
 
 namespace Distance.ReplayIntensifies.Scripts
@@ -18,6 +18,22 @@ namespace Distance.ReplayIntensifies.Scripts
 
 		// Data materialization effect seen when a car spawns.
 		public bool ShowDataEffect { get; internal set; }
+
+		public bool IsOnline { get; internal set; }
+
+		public bool IsMyPlayer { get; internal set; }
+
+		public bool DidNotFinish { get; internal set; }
+
+		public int Placement { get; internal set; }
+
+		public CarReplayData.CarData OriginalCarData { get; internal set; }
+
+		public CarReplayData.CarData CarData { get; internal set; }
+
+		public bool IsRandomnessEnabled { get; internal set; }
+
+		public int RandomSeed { get; internal set; }
 
 		// This car acts like a ghost and will not affect the environment in any way.
 		// Will differ from `IsGhostMode` after the start of `InitPlayerDataReplay` if `simulateNetworkCar_` is true.
@@ -64,6 +80,55 @@ namespace Distance.ReplayIntensifies.Scripts
 			compoundData.IsRival = isRival;
 			// Never show data effect for ghost visuals. Only show in ghost mode if the settings are configured to show it.
 			compoundData.ShowDataEffect = !compoundData.IsGhostVisual && (!isGhostBehavior || showDataEffect);
+
+			compoundData.CarData = compoundData.OriginalCarData = data.carData_;
+
+			var carCompoundData = data.GetComponent<CarReplayDataCompoundData>();
+			if (carCompoundData)
+			{
+				compoundData.IsOnline = carCompoundData.IsOnline;
+				compoundData.IsMyPlayer = carCompoundData.IsMyPlayer;
+				compoundData.DidNotFinish = carCompoundData.DidNotFinish;
+				compoundData.Placement = carCompoundData.Placement;
+			}
+
+			compoundData.IsRandomnessEnabled = Mod.Instance.Config.IsCarRandomnessEnabled(compoundData.IsOnline, isRival, data.carData_.name_);
+			// Never randomize your own replay of your most recent run (so that the car remains the same when clicking view replay).
+			if (compoundData.IsMyPlayer)
+			{
+				compoundData.IsRandomnessEnabled = false;
+			}
+
+			compoundData.RandomSeed = (int)Crc.Initial32;// compoundData.ReplayLengthMS ^ compoundData.PlayerName.GetHashCode(); // 0;
+
+			if (compoundData.IsRandomnessEnabled)
+			{
+				// Determine a fixed seed to use for the replay car's randomness.
+				if (Mod.Instance.Config.FixedRandomness)
+				{
+					//System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+					// This seems excessive, maybe only take a max number of bytes?
+					// CRC-32 is a much more reliable hash than what's used by Mono.String.GetHashCode(),
+					// The duration of the hash is double that of Mono.String.GetHashCode(),
+					//  but the worst you'll get is like 0.4 seconds for 10+ hours of replay data(?)
+					int seed = (int)Crc.Initial32;
+					seed = Crc.Hash32(data.StateBuffer_, seed);
+					seed = Crc.Hash32(data.EventBuffer_, seed);
+					compoundData.RandomSeed = seed;
+
+					//watch.Stop();
+					//int length = data.StateBuffer_.Length + data.EventBuffer_.Length;
+					//Mod.Instance.Logger.Debug($"Took {watch.ElapsedMilliseconds}ms to hash {length} bytes of replay data");
+				}
+
+				// Choose the random car type and colors to use.
+				var rmCompoundData = G.Sys.ReplayManager_.GetComponent<ReplayManagerCompoundData>();
+				if (rmCompoundData)
+				{
+					compoundData.CarData = rmCompoundData.ChooseRandomCarData(data.carData_, compoundData.RandomSeed, compoundData.Placement);
+				}
+			}
 
 			return compoundData;
 		}

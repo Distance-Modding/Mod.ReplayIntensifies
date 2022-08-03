@@ -1,4 +1,5 @@
-﻿using Reactor.API.Configuration;
+﻿using Distance.ReplayIntensifies.Randomizer;
+using Reactor.API.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -190,6 +191,108 @@ namespace Distance.ReplayIntensifies
 			private set => Set(SteamRivals_ID, value);
 		}
 
+
+		private const string EnableRandomizedCars_ID = "random.enabled";
+		public bool EnableRandomizedCars
+		{
+			get => Get<bool>(EnableRandomizedCars_ID);
+			set => Set(EnableRandomizedCars_ID, value);
+		}
+
+		private const string ExtraRandomnessSeed_ID = "random.extra_seed";
+		public uint ExtraRandomnessSeed
+		{
+			get => Get<uint>(ExtraRandomnessSeed_ID);
+			set => Set(ExtraRandomnessSeed_ID, value);
+		}
+
+		private const string FixedRandomness_ID = "random.fixed_randomness";
+		public bool FixedRandomness
+		{
+			get => Get<bool>(FixedRandomness_ID);
+			set => Set(FixedRandomness_ID, value);
+		}
+
+
+		private const string RandomOfflineCars_ID = "random.offline_cars";
+		public bool RandomOfflineCars
+		{
+			get => Get<bool>(RandomOfflineCars_ID);
+			set => Set(RandomOfflineCars_ID, value);
+		}
+
+		private const string RandomOnlineCars_ID = "random.online_cars";
+		public bool RandomOnlineCars
+		{
+			get => Get<bool>(RandomOnlineCars_ID);
+			set => Set(RandomOnlineCars_ID, value);
+		}
+
+		private const string RandomRivalCars_ID = "random.rival_cars";
+		public bool RandomRivalCars
+		{
+			get => Get<bool>(RandomRivalCars_ID);
+			set => Set(RandomRivalCars_ID, value);
+		}
+
+		private const string RespectBackerCars_ID = "random.respect_backer_cars";
+		public bool RespectBackerCars
+		{
+			get => Get<bool>(RespectBackerCars_ID);
+			set => Set(RespectBackerCars_ID, value);
+		}
+
+
+		private const string RandomCarChances_ID = "random.car_chances";
+		public Dictionary<string, float> RandomCarChances
+		{
+			get => Convert<Dictionary<string, float>>(RandomCarChances_ID, RandomCarType.VanillaCarChances, overwriteNull: true);
+			private set => Set(RandomCarChances_ID, value);
+		}
+
+		private const string RandomCustomCarsChance_ID = "random.custom_cars_chance";
+		public float RandomCustomCarsChance
+		{
+			get => Get<float>(RandomCustomCarsChance_ID);
+			set => Set(RandomCustomCarsChance_ID, value);
+		}
+
+		private const string IndividualRandomCustomCarsChance_ID = "random.custom_cars_chance_individual";
+		public bool IndividualRandomCustomCarsChance
+		{
+			get => Get<bool>(IndividualRandomCustomCarsChance_ID);
+			set => Set(IndividualRandomCustomCarsChance_ID, value);
+		}
+
+
+		private const string RandomCarMethod_ID = "random.car_method";
+		public RandomCarMethod RandomCarMethod
+		{
+			get => Get<RandomCarMethod>(RandomCarMethod_ID);
+			set => Set(RandomCarMethod_ID, value);
+		}
+
+		private const string RandomColorMethod_ID = "random.color_method";
+		public RandomColorMethod RandomColorMethod
+		{
+			get => Get<RandomColorMethod>(RandomColorMethod_ID);
+			set => Set(RandomColorMethod_ID, value);
+		}
+
+		private const string RandomCarByPlacement_ID = "random.car_by_placement";
+		public bool RandomCarByPlacement
+		{
+			get => Get<bool>(RandomCarByPlacement_ID);
+			set => Set(RandomCarByPlacement_ID, value);
+		}
+
+		private const string RandomColorByPlacement_ID = "random.color_by_placement";
+		public bool RandomColorByPlacement
+		{
+			get => Get<bool>(RandomColorByPlacement_ID);
+			set => Set(RandomColorByPlacement_ID, value);
+		}
+
 		#endregion
 
 		#region Cached
@@ -229,6 +332,53 @@ namespace Distance.ReplayIntensifies
 				((isGhost && this.UseRivalStyleForGhosts) || (!isGhost && this.UseRivalStyleForReplays)))
 			{
 				return IsSteamRival(userID, false);
+			}
+			return false;
+		}
+
+		public float GetCarTypeChance(string carName)
+		{
+			if (this.RandomCarChances.TryGetValue(carName, out float weight))
+			{
+				return weight;
+			}
+			return 0f;
+		}
+
+		public void SetCarTypeChance(string carName, float weight, bool autoSave = true)
+		{
+			var randomCarChances = this.RandomCarChances;
+			if (!randomCarChances.TryGetValue(carName, out float oldWeight) || oldWeight != weight)
+			{
+				randomCarChances[carName] = weight;
+				if (autoSave)
+				{
+					this.Save();
+				}
+			}
+		}
+
+		public bool IsCarRandomnessEnabled(bool isOnline, bool isCarRival, string carName)
+		{
+			if (this.EnableRandomizedCars)
+			{
+				if (isOnline && this.RespectBackerCars && RandomCarType.IsBackerCar(carName))
+				{
+					// Only count setting when used for online cars (we still want backers to be able to randomize their own local replays).
+					return false;
+				}
+				else if (isCarRival)
+				{
+					return this.RandomRivalCars;
+				}
+				else if (isOnline)
+				{
+					return this.RandomOnlineCars;
+				}
+				else
+				{
+					return this.RandomOfflineCars;
+				}
 			}
 			return false;
 		}
@@ -311,6 +461,246 @@ namespace Distance.ReplayIntensifies
 
 		#endregion
 
+
+		#region Randomized Cars
+
+		private int unfixedRandomCount = 0;
+
+		private System.Random GetRandom(int seed, int placement, bool byPlacement, int skipCount)
+		{
+			if (byPlacement)
+			{
+				seed = placement;
+			}
+			else if (!this.FixedRandomness)
+			{
+				// Default constructor seed for System.Random, combined with an increment
+				//  to ensure we're not creating multiple RNGs on the same tick.
+				seed = unchecked(Environment.TickCount + this.unfixedRandomCount++);
+			}
+			System.Random rng = new System.Random(seed ^ unchecked((int)this.ExtraRandomnessSeed));
+
+			for (int i = 0; i < skipCount; i++)
+			{
+				rng.NextDouble();
+			}
+			return rng;
+		}
+
+		public CarReplayData.CarData ChooseRandomCarData(CarReplayData.CarData origCarData, int seed, int placement,
+														 List<RandomCarType> carTypes, List<RandomColorPreset> colorPresets)
+		{
+			var carRng = this.GetRandom(seed, placement, this.RandomCarByPlacement, 0);
+			var colorRng = this.GetRandom(seed, placement, this.RandomColorByPlacement, 1);
+
+			// ==== Choose our car type ====
+
+			if (!RandomCarType.TryCreate(origCarData.name_, 1f, 1, out var carType))
+			{
+				carType = RandomCarType.DefaultCarType;
+			}
+
+			var carMethod = this.RandomCarMethod;
+			if (carMethod.IsCarTypes())
+			{
+				if (carTypes != null)
+				{
+					int carTypeIndex = carTypes.Count - 1; // Default to end in very unlikely scenario of rolling exactly 1.0.
+
+					// Use doubles starting here for higher precision.
+					double totalWeight = carTypes.Sum((x) => (double)x.Weight);
+
+					double end = 0.0;
+					double choice = 0.0;
+					if (carMethod != RandomCarMethod.Car_Types_Ordered)
+					{
+						choice = carRng.NextDouble() * totalWeight;
+					}
+
+					for (int i = 0; i < carTypes.Count; i++)
+					{
+						end += carTypes[i].Weight;
+						if (choice < end)
+						{
+							carTypeIndex = i;
+							break;
+						}
+					}
+
+					carType = carTypes[carTypeIndex];
+					// Remove from the pool of cars to choose from if needed.
+					if (carMethod.IsAvoidDuplicates() && carType.MaxCount > 0)
+					{
+						if (--carType.RemainingCount <= 0)
+						{
+							carTypes.RemoveAt(carTypeIndex);
+						}
+					}
+				}
+			}
+
+			// ==== Choose our car colors ====
+
+			CarColors carColors = origCarData.colors_;
+			var colorMethod = this.RandomColorMethod;
+			if (colorMethod == RandomColorMethod.Default_Colors)
+			{
+				carColors = carType.DefaultColors;
+			}
+			else if (colorMethod.IsColorPresets())
+			{
+				if (colorPresets != null)
+				{
+					int colorPresetIndex = colorPresets.Count - 1; // Default to end in very unlikely scenario of rolling exactly 1.0.
+
+					double totalWeight = colorPresets.Sum((x) => (double)x.Weight);
+
+					double end = 0.0;
+					double choice = 0.0;
+					if (colorMethod != RandomColorMethod.Color_Presets_Ordered)
+					{
+						choice = colorRng.NextDouble() * totalWeight;
+					}
+
+					for (int i = 0; i < colorPresets.Count; i++)
+					{
+						end += colorPresets[i].Weight;
+						if (choice < end)
+						{
+							colorPresetIndex = i;
+							break;
+						}
+					}
+
+					var colorPreset = colorPresets[colorPresetIndex];
+					if (colorPreset.IsDefault)
+					{
+						carColors = carType.DefaultColors;
+					}
+					else
+					{
+						carColors = colorPreset.Colors;
+					}
+
+					// Remove from the pool of colors to choose from if needed.
+					if (colorMethod.IsAvoidDuplicates() && colorPreset.MaxCount > 0)
+					{
+						if (--colorPreset.RemainingCount <= 0)
+						{
+							colorPresets.RemoveAt(colorPresetIndex);
+						}
+					}
+				}
+			}
+			else if (colorMethod == RandomColorMethod.HSV)
+			{
+				for (ColorChanger.ColorType i = 0; i < ColorChanger.ColorType.Size_; i++)
+				{
+					// HSV seems to give a better random spread of colors than RGB.
+					// see: <https://stackoverflow.com/a/3135179/7517185>
+					carColors[i] = Color.HSVToRGB((float)colorRng.NextDouble(),
+												  (float)colorRng.NextDouble(),
+												  (float)colorRng.NextDouble());
+				}
+			}
+			else if (colorMethod == RandomColorMethod.RGB)
+			{
+				for (ColorChanger.ColorType i = 0; i < ColorChanger.ColorType.Size_; i++)
+				{
+					carColors[i] = new Color((float)colorRng.NextDouble(),
+											 (float)colorRng.NextDouble(),
+											 (float)colorRng.NextDouble());
+				}
+			}
+
+			return new CarReplayData.CarData(carType.Name, carColors);
+		}
+
+		public List<RandomColorPreset> LoadRandomColorPresets()
+		{
+			var colorPresets = RandomColorPreset.LoadAllColorPresets(defaultMaxCount: 1);
+
+			if (this.RandomColorByPlacement)
+			{
+				// Skip default color preset when coloring by placement (since the color varies by car).
+				colorPresets.RemoveAll((x) => x.IsDefault);
+			}
+			
+			return colorPresets;
+		}
+
+		public List<RandomCarType> LoadRandomCarTypes()
+		{
+			Dictionary<string, RandomCarType> randomCarTypes = new Dictionary<string, RandomCarType>();
+			int explicitCustomCount = 0;
+
+			foreach (var carWeightPair in this.RandomCarChances)
+			{
+				if (RandomCarType.TryCreate(carWeightPair.Key, carWeightPair.Value, 1, out RandomCarType carType))
+				{
+					randomCarTypes.Add(carType.Name, carType);
+					if (!carType.IsVanilla)
+					{
+						explicitCustomCount++;
+					}
+				}
+			}
+
+			// Exclude number of explicitly included custom cars in settings file.
+			//int implicitCustomCount = knownCars.Count - Mod.VanillaCarChances.Count - explicitCustomCount;
+			int implicitCustomCount = RandomCarType.CustomCarsCount - explicitCustomCount;
+
+			float implicitCustomWeight = this.RandomCustomCarsChance;
+			if (implicitCustomCount > 0 && implicitCustomWeight > 0f)
+			{
+				if (!this.IndividualRandomCustomCarsChance)
+				{
+					// The chance of choosing a custom car is split up equally across all custom cars.
+					implicitCustomWeight /= implicitCustomCount;
+				}
+
+				foreach (string customCarName in RandomCarType.CustomCarNames)
+				{
+					if (!randomCarTypes.ContainsKey(customCarName) &&
+						RandomCarType.TryCreate(customCarName, implicitCustomWeight, 1, out RandomCarType carType))
+					{
+						randomCarTypes.Add(carType.Name, carType);
+					}
+				}
+			}
+
+			var randomCarTypeList = randomCarTypes.Values.ToList();
+			randomCarTypeList.Sort(); // Sort using RandomCarInfo IComparable interface.
+
+			if (randomCarTypeList.Count == 0)
+			{
+				randomCarTypeList.Add(RandomCarType.DefaultCarType);
+			}
+
+			/*if (!carTypesListedOnce)
+			{
+				carTypesListedOnce = true;
+				Mod.Instance.Logger.Debug("====Known Cars====");
+				int ii = 0;
+				foreach (var knownCarPair in RandomCarType.KnownCars)
+				{
+					Mod.Instance.Logger.Debug($"knownCars[{ii}] = \"{knownCarPair.Key}\", index = {knownCarPair.Value}");
+					ii++;
+				}
+				Mod.Instance.Logger.Debug("====Config Cars====");
+				for (int i = 0; i < randomCarTypeList.Count; i++)
+				{
+					Mod.Instance.Logger.Debug($"randomCarTypeList[{i}] = \"{randomCarTypeList[i].Name}\", weight = {randomCarTypeList[i].Weight}");
+				}
+			}*/
+
+			return randomCarTypeList;
+		}
+
+		//private static bool carTypesListedOnce = false;
+
+		#endregion
+
 		internal Settings Config;
 
 		public event Action<ConfigurationLogic> OnChanged;
@@ -352,6 +742,24 @@ namespace Distance.ReplayIntensifies
 			Get(RivalBrightness_ID, 1.0f);
 			Get(RivalOutline_ID, true);
 			Get(RivalDetailType_ID, CarLevelOfDetail.Type.Networked);
+
+			// Randomized Cars
+			Get(EnableRandomizedCars_ID, false);
+			Get(FixedRandomness_ID, true);
+			Get(ExtraRandomnessSeed_ID, (uint)0u);
+			Get(RandomOfflineCars_ID, true);
+			Get(RandomOnlineCars_ID, false);
+			Get(RandomRivalCars_ID, false);
+			Get(RespectBackerCars_ID, true);
+
+			Convert(RandomCarChances_ID, RandomCarType.VanillaCarChances, overwriteNull: true);
+			Get(RandomCustomCarsChance_ID, 0.0f);
+			Get(IndividualRandomCustomCarsChance_ID, true);
+
+			Get(RandomCarMethod_ID, RandomCarMethod.Car_Types);
+			Get(RandomColorMethod_ID, RandomColorMethod.Color_Presets);
+			Get(RandomCarByPlacement_ID, false);
+			Get(RandomColorByPlacement_ID, false);
 
 			// Save settings, and any defaults that may have been added.
 			Save();
