@@ -16,7 +16,7 @@ namespace Distance.ReplayIntensifies.Scripts
 		public List<RandomColorPreset> CarPresets { get; internal set; }
 
 
-		public CarReplayData.CarData ChooseRandomCarData(CarReplayData.CarData origCarData, int seed, int placement)
+		public CarReplayData.CarData ChooseRandomCarData(CarReplayData.CarData origCarData, int replaySeed, int placementSeed)
 		{
 			// Reset any lists that have been exhausted by the 'avoid duplicate' settings.
 			if (this.CarTypes != null && this.CarTypes.Count == 0)
@@ -28,18 +28,22 @@ namespace Distance.ReplayIntensifies.Scripts
 				this.CarPresets = RandomColorPreset.CloneListAndReset(this.OriginalCarPresets); // reset remaining counts
 			}
 
-			return Mod.Instance.Config.ChooseRandomCarData(origCarData, seed, placement, this.CarTypes, this.CarPresets);
+			return Mod.Instance.Config.ChooseRandomCarData(origCarData, replaySeed, placementSeed, this.CarTypes, this.CarPresets);
 		}
 
 		public static ReplayManagerCompoundData Create(ReplayManager replayManager)
 		{
 			var rmCompoundData = replayManager.gameObject.GetOrAddComponent<ReplayManagerCompoundData>();
+			if (!Mod.Instance.Config.EnableRandomizedCars)
+			{
+				return rmCompoundData;
+			}
 
 			// Prepare lists for random cars and color presets to choose from.
-			if (Mod.Instance.Config.RandomCarMethod.IsCarTypes())
+			if (Mod.Instance.Config.RandomCarChoiceMethod.IsCarTypes())
 			{
 				rmCompoundData.CarTypes = rmCompoundData.OriginalCarTypes = Mod.Instance.Config.LoadRandomCarTypes();
-				if (Mod.Instance.Config.RandomCarMethod.IsAvoidDuplicates())
+				if (Mod.Instance.Config.RandomCarChoiceMethod.IsAvoidDuplicates())
 				{
 					rmCompoundData.CarTypes = RandomCarType.CloneListAndReset(rmCompoundData.OriginalCarTypes); // reset remaining counts
 				}
@@ -49,10 +53,10 @@ namespace Distance.ReplayIntensifies.Scripts
 				rmCompoundData.CarTypes = rmCompoundData.OriginalCarTypes = null;
 			}
 
-			if (Mod.Instance.Config.RandomColorMethod.IsColorPresets())
+			if (Mod.Instance.Config.RandomColorChoiceMethod.IsColorPresets())
 			{
 				rmCompoundData.CarPresets = rmCompoundData.OriginalCarPresets = Mod.Instance.Config.LoadRandomColorPresets();
-				if (Mod.Instance.Config.RandomColorMethod.IsAvoidDuplicates())
+				if (Mod.Instance.Config.RandomColorChoiceMethod.IsAvoidDuplicates())
 				{
 					rmCompoundData.CarPresets = RandomColorPreset.CloneListAndReset(rmCompoundData.OriginalCarPresets); // reset remaining counts
 				}
@@ -63,7 +67,8 @@ namespace Distance.ReplayIntensifies.Scripts
 			}
 
 
-			if (Mod.Instance.Config.RandomCarByPlacement || Mod.Instance.Config.RandomColorByPlacement)
+			if (Mod.Instance.Config.RandomCarSeedMethod   == RandomSeedMethod.By_Placement ||
+				Mod.Instance.Config.RandomColorSeedMethod == RandomSeedMethod.By_Placement)
 			{
 				// Gather all replay cars to evaluate their placement.
 				List<CarReplayData> placements = new List<CarReplayData>();
@@ -151,9 +156,17 @@ namespace Distance.ReplayIntensifies.Scripts
 
 		private static int ComparePlacementPoints(CarReplayData x, CarReplayData y)
 		{
+			var x_carCompoundData = x.GetComponent<CarReplayDataCompoundData>();
+			var y_carCompoundData = y.GetComponent<CarReplayDataCompoundData>();
 			bool x_gtZero = x.FinishValue_ > 0;
 			bool y_gtZero = y.FinishValue_ > 0;
-			if (x_gtZero != y_gtZero)
+			if (x_carCompoundData && y_carCompoundData &&
+				x_carCompoundData.DidNotFinish != y_carCompoundData.DidNotFinish)
+			{
+				// Finished before DidNotFinish.
+				return x_carCompoundData.DidNotFinish.CompareTo(y_carCompoundData.DidNotFinish);
+			}
+			else if (x_gtZero != y_gtZero)
 			{
 				// Non-zero FinishValues before zero FinishValues.
 				return y_gtZero.CompareTo(x_gtZero);
@@ -167,9 +180,17 @@ namespace Distance.ReplayIntensifies.Scripts
 
 		private static int ComparePlacementTime(CarReplayData x, CarReplayData y)
 		{
+			var x_carCompoundData = x.GetComponent<CarReplayDataCompoundData>();
+			var y_carCompoundData = y.GetComponent<CarReplayDataCompoundData>();
 			bool x_gtZero = x.FinishValue_ > 0;
 			bool y_gtZero = y.FinishValue_ > 0;
-			if (x_gtZero != y_gtZero)
+			if (x_carCompoundData && y_carCompoundData &&
+				x_carCompoundData.DidNotFinish != y_carCompoundData.DidNotFinish)
+			{
+				// Finished before DidNotFinish.
+				return x_carCompoundData.DidNotFinish.CompareTo(y_carCompoundData.DidNotFinish);
+			}
+			else if (x_gtZero != y_gtZero)
 			{
 				// Non-zero FinishValues before zero FinishValues.
 				return y_gtZero.CompareTo(x_gtZero);

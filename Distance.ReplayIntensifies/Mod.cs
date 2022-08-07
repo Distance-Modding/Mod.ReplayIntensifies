@@ -1,5 +1,6 @@
 ﻿using Centrifuge.Distance.Game;
 using Centrifuge.Distance.GUI.Data;
+using Centrifuge.Distance.GUI.Menu;
 using Distance.ReplayIntensifies.Helpers;
 using Distance.ReplayIntensifies.Randomizer;
 using Distance.ReplayIntensifies.Scripts;
@@ -9,6 +10,7 @@ using Reactor.API.Logging;
 using Reactor.API.Runtime.Patching;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -35,6 +37,13 @@ namespace Distance.ReplayIntensifies
 
 		public const int MinOnlineLeaderboards = 15;
 
+		public const float MaxRandomWeight = 100f;
+
+		// Keyword used in input prompts to randomize the result.
+		public const string RngKeyword = "*";
+
+		public const bool Debug_TestBackerCars = false;
+
 		// In-Focus LODs are only used for the replay car with camera focus.
 		// Unfocused cars should never have an LOD higher than Near. And having a lower max LOD is only
 		//  necessary for unfocused cars, so remove these options and exclude both In-Focus's from Max LOD checks.
@@ -51,6 +60,14 @@ namespace Distance.ReplayIntensifies
 		public Log Logger { get; private set; }
 
 		public ConfigurationLogic Config { get; private set; }
+
+		// Needed to update slider values after a set-all action,
+		// and also prevent these same sliders from forcing the value back
+		private CentrifugeMenu currentCentrifugeMenu;
+
+		// Keep hold of these to populate at a later time.
+		private MenuTree randomVanillaCarWeightsSubmenu;
+		private MenuTree randomCustomCarWeightsSubmenu;
 
 		/// <summary>
 		/// Method called as soon as the mod is loaded.
@@ -101,6 +118,11 @@ namespace Distance.ReplayIntensifies
 			try
 			{
 				CreateSettingsMenu();
+				// Subscribe to menu open so that we have a handle to the current CentrifugeMenu.
+				// We need it to ensure controls are reset after other settings change specific values.
+				// This isn't just to reflect changes in the controls either, some controls will outright FORCE their value
+				//  setter after coming back from a message box, so the only way to stop that is to reset the menu controls.
+				Events.GUI.MenuOpened.Subscribe(OnCentrifugeMenuOpened);
 			}
 			catch (Exception ex)
 			{
@@ -112,7 +134,34 @@ namespace Distance.ReplayIntensifies
 			Logger.Info(Mod.Name + ": Initialized!");
 		}
 
+		private void OnCentrifugeMenuOpened(Events.GUI.MenuOpened.Data data)
+		{
+			this.currentCentrifugeMenu = data.menu;
+
+			// Ensure these menus are populated after all car data is loaded.
+			//  (this function will only run the first time it's called).
+			// NOTE: This event is called *after* a menu is opened and its controls are displayed,
+			//       so we're relying on hitting this event in a parent menu first.
+			PopulateCarWeightsSubmenus();
+		}
+
 		#region Settings Helpers
+
+		private void ResetCentrifugeMenuControls()
+		{
+			// Update all slider values on the page by rebuilding the page controls.
+			if (this.currentCentrifugeMenu != null)
+			{
+				// FUN TIMES: After leaving the message box, all sliders have their Start function called.
+				//            Guess what happens in Start? onChange is triggered.
+				//            Guess what happens in onChange? setFn using the slider value is called.
+				// SO TIME TO TEAR ALL THIS CRAP OUT AND STOP IT FROM DOING ANY
+				// DAMAGE BY RESETTING THE MENU BECAUSE OH GOD THIS IS AWFUL.
+
+				// Everything is rebuilt here, so it doesn't matter how badly we mess things up.
+				this.currentCentrifugeMenu.SwitchPage(0, true, true);
+			}
+		}
 
 		private enum CarStyle
 		{
@@ -457,11 +506,15 @@ namespace Distance.ReplayIntensifies
 				"setting:rival_outline_brightness_input",
 				"RIVAL OUTLINE BRIGHTNESS",
 				(value) => {
-					if (float.TryParse(value, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
+					if (string.IsNullOrEmpty(value))
+					{
+						// Don't change
+					}
+					else if (float.TryParse(value, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
 					{
 						// Allow extremely high outline brightness (which doesn't affect outline itself, but does affect jets and wings).
 						// Anything higher than 100,000 will produce black splotches from the intensity.
-						result = Math.Max(0.05f, Math.Min(100_000f, result));
+						result = Mathf.Clamp(result, 0.05f, 100_000f);
 						if (Config.RivalBrightness != result)
 						{
 							Config.RivalBrightness = result;
@@ -479,7 +532,13 @@ namespace Distance.ReplayIntensifies
 					}
 				},
 				null,
-				null,
+				(input) => {
+					if (!float.TryParse(input, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
+					{
+						return "This is not a valid decimal number";
+					}
+					return null;
+				},
 				"ENTER OUTLINE BRIGHTNESS",
 				null,
 				"Change the brightness for Steam Rival car outlines." +
@@ -489,9 +548,53 @@ namespace Distance.ReplayIntensifies
 			return rivalsSubmenu;
 		}
 
+		private string OnValidateExtraRandomnessSeed(string input)
+		{
+			if (string.IsNullOrEmpty(input) || input == RngKeyword)
+			{
+				return null;
+			}
+			else if (!uint.TryParse(input, out _))
+			{
+				return $"Not a valid integer between 0 and {uint.MaxValue} or " + RngKeyword;
+			}
+			return null;
+		}
+
+		private void OnSubmitExtraRandomnessSeed(string input)
+		{
+			if (string.IsNullOrEmpty(input))
+			{
+				// Don't change
+			}
+			else if (input == RngKeyword) // Generate a random number.
+			{
+				var rng = new System.Random();
+				// System.Random.Next() only generates something like a 30-bit integer,
+				//  so cut that in half and use two random numbers for the LOWORD and HIWORD.
+				Config.ExtraRandomnessSeed = unchecked(((uint)rng.Next() & 0xffffu) | (((uint)rng.Next() & 0xffffu) << 16));
+			}
+			else if (uint.TryParse(input, NumberStyles.AllowHexSpecifier, null, out uint result))
+			{
+				Config.ExtraRandomnessSeed = result;
+			}
+		}
+
 		private MenuTree CreateRandomizedCarsSubmenu()
 		{
 			MenuTree randomSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random", "Randomized Cars");
+
+			Dictionary<string, RandomSeedMethod> seedMethods = RandomSeedMethodExtensions.GetSupportedMethodsList()
+																						 .ToDictionary(m => m.GetSettingName());
+
+			Dictionary<string, RandomCarMethod> carMethods = RandomCarMethodExtensions.GetSupportedMethodsList()
+																					  .ToDictionary(m => m.GetSettingName());
+
+			Dictionary<string, RandomColorMethod> colorMethods = RandomColorMethodExtensions.GetSupportedMethodsList()
+																							.ToDictionary(m => m.GetSettingName());
+
+			Dictionary<string, LocalOrOnline> localOrOnlineEntries = LocalOrOnlineExtensions.GetSupportedMethodsList()
+																							.ToDictionary(m => m.GetSettingName());
 
 			// Page 1
 			randomSubmenu.CheckBox(MenuDisplayMode.Both,
@@ -501,47 +604,23 @@ namespace Distance.ReplayIntensifies
 				(value) => Config.EnableRandomizedCars = value,
 				"Enable the randomized cars feature, allowing for more variety with opponents.");
 
-			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+			/*randomSubmenu.CheckBox(MenuDisplayMode.Both,
 				"setting:random_fixed",
 				"FIXED RANDOMNESS",
 				() => Config.FixedRandomness,
 				(value) => Config.FixedRandomness = value,
-				"Individual replays will always use the same random seed, allowing to identify specific cars across multiple runs.");
+				"Individual replays will always use the same random seed, allowing to identify specific cars across multiple runs.");*/
 
-			randomSubmenu.InputPrompt(MenuDisplayMode.Both,
-				"setting:extra_randomness",
-				"EXTRA RANDOMNESS SEED",
-				(value) => {
-					if (string.IsNullOrEmpty(value))
-					{
-						// Don't change
-					}
-					else if (value == "*") // Generate a random number.
-					{
-						var rng = new System.Random();
-						// System.Random.Next() only generates something like a 30-bit integer,
-						//  so cut that in half and use two random numbers for the LOWORD and HIWORD.
-						Config.ExtraRandomnessSeed = unchecked(((uint)rng.Next() & 0xffffu) | (((uint)rng.Next() & 0xffffu) << 16));
-					}
-					else if (uint.TryParse(value, System.Globalization.NumberStyles.AllowHexSpecifier, null, out uint result))
-					{
-						Config.ExtraRandomnessSeed = result;
-					}
-					else
-					{
-						Logger.Warning("EXTRA RANDOMNESS SEED: Invalid 32-bit unsigned integer value");
-					}
-				},
-				null,
-				null,
-				"ENTER A NUMBER",
-				null,
-				"Change up the seeds for replays when using FIXED RANDOMNESS." +
-				$" Enter a number between 0 and {uint.MaxValue} (0x{uint.MaxValue:X8}). Or enter * to generate a random number.")
-				.WithDefaultValue(() => Config.ExtraRandomnessSeed.ToString());
+			randomSubmenu.ListBox<LocalOrOnline>(MenuDisplayMode.Both,
+				"setting:random_local_or_online_cars",
+				"USE RANDOM CARS FOR",
+				() => Config.UseRandomCarsFor,
+				(value) => Config.UseRandomCarsFor = value,
+				localOrOnlineEntries,
+				"Choose whether local and/or online leaderboards replays will be randomized." +
+				" 'Online' is not recommended for normal play, since a player's car can be considered part of 'their identity' in the leaderboards.");
 
-
-			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+			/*randomSubmenu.CheckBox(MenuDisplayMode.Both,
 				"setting:random_offline_cars",
 				"USE RANDOM LOCAL CARS",
 				() => Config.RandomOfflineCars,
@@ -553,117 +632,327 @@ namespace Distance.ReplayIntensifies
 				"USE RANDOM ONLINE CARS",
 				() => Config.RandomOnlineCars,
 				(value) => Config.RandomOnlineCars = value,
-				"Online leaderboards cars will be randomized.");
+				"Online leaderboards cars will be randomized." +
+				" This setting is not recommended for normal play, since a player's car can be considered part of 'their identity' in the leaderboards.");*/
 
 			randomSubmenu.CheckBox(MenuDisplayMode.Both,
 				"setting:random_rival_cars",
 				"USE RANDOM RIVAL CARS",
-				() => Config.RandomRivalCars,
-				(value) => Config.RandomRivalCars = value,
+				() => Config.UseRandomRivalCars,
+				(value) => Config.UseRandomRivalCars = value,
 				"Rival cars will be randomized (STEAM RIVALS feature must be enabled).");
 
 			randomSubmenu.CheckBox(MenuDisplayMode.Both,
 				"setting:random_respect_backer_cars",
 				"RESPECT KICKSTARTER BACKERS",
-				() => Config.RespectBackerCars,
-				(value) => Config.RespectBackerCars = value,
-				$"Disable randomizing online replays that use the '{RandomCarType.BackerCar}' Kickstarter backer car.");
+				() => Config.RandomRespectBackerCars,
+				(value) => Config.RandomRespectBackerCars = value,
+				"Disable randomizing online replays that use the Kickstarter backer car.");
 
+			randomSubmenu.InputPrompt(MenuDisplayMode.Both,
+				"setting:extra_randomness",
+				"EXTRA RANDOMNESS SEED",
+				OnSubmitExtraRandomnessSeed,
+				null,
+				OnValidateExtraRandomnessSeed,
+				"ENTER AN INTEGER",
+				null,
+				"Change up the fixed randomness for replays a little." +
+				$" Enter a number between 0 and {uint.MaxValue} (0x{uint.MaxValue:X8}). Or enter " + RngKeyword + " to generate a random number.")
+				.WithDefaultValue(() => Config.ExtraRandomnessSeed.ToString());
+
+
+			const string SeedMethodDescription =
+				" By Replay will use the replay data as the seed, so that each replay will always be the same." +
+				" By Placement will use the placement between all replays as the seed.";
+
+			const string ChoiceMethodDescription =
+				" Cycle will randomly cycle through choices once before choosing duplicates.";
+
+			randomSubmenu.ListBox<RandomSeedMethod>(MenuDisplayMode.Both,
+				"setting:random_car_seed_method",
+				"CAR SEED METHOD",
+				() => Config.RandomCarSeedMethod,
+				(value) => Config.RandomCarSeedMethod = value,
+				seedMethods,
+				"Change how randomness is determined for car types." + SeedMethodDescription);
+
+			randomSubmenu.ListBox<RandomSeedMethod>(MenuDisplayMode.Both,
+				"setting:random_color_seed_method",
+				"COLOR SEED METHOD",
+				() => Config.RandomColorSeedMethod,
+				(value) => Config.RandomColorSeedMethod = value,
+				seedMethods,
+				"Change how randomness is determined for car colors." + SeedMethodDescription);
+
+			randomSubmenu.ListBox<RandomCarMethod>(MenuDisplayMode.Both,
+				"setting:random_car_choice_method",
+				"CAR CHOICE METHOD",
+				() => Config.RandomCarChoiceMethod,
+				(value) => Config.RandomCarChoiceMethod = value,
+				carMethods,
+				"Choose how random car types will be decided." + ChoiceMethodDescription);
+
+			randomSubmenu.ListBox<RandomColorMethod>(MenuDisplayMode.Both,
+				"setting:random_color_choice_method",
+				"COLOR CHOICE METHOD",
+				() => Config.RandomColorChoiceMethod,
+				(value) => Config.RandomColorChoiceMethod = value,
+				colorMethods,
+				"Choose how random car colors will be decided." + ChoiceMethodDescription);
+
+			// Page 2
+			randomSubmenu.SubmenuButton(MenuDisplayMode.Both,
+				"submenu:random_vanilla_car_weights",
+				"VANILLA CAR WEIGHT SETTINGS",
+				CreateVanillaCarWeightsSubmenu(),
+				"Change weighted chances for vanilla cars to be randomly chosen.");
 
 			randomSubmenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:random_car_types",
-				"RANDOM CAR TYPE SETTINGS",
-				CreateRandomizedCarTypesSubmenu(),
-				"Settings for which cars can be randomly chosen based on weighted values." +
-				" Specific custom cars can be given their own weights by editing Settings/Config.json.");
+				"submenu:random_custom_car_weights",
+				"CUSTOM CAR WEIGHT SETTINGS",
+				CreateCustomCarWeightsSubmenu(),
+				"Change weighted chances for custom cars to be randomly chosen.");
 
-			randomSubmenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:random_car_colors",
-				"RANDOM CAR COLOR SETTINGS",
-				CreateRandomizedCarColorsSubmenu(),
-				"Settings for how random colors are decided for cars.");
+			randomSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_require_car_unlocks",
+				"REQUIRE CAR UNLOCKS",
+				() => Config.RandomRequireCarUnlocks,
+				(value) => Config.RandomRequireCarUnlocks = value,
+				"Disable using random car types that you haven't unlocked yet.");
 
 			return randomSubmenu;
 		}
 
-		private MenuTree CreateRandomizedCarTypesSubmenu()
+		private MenuTree CreateVanillaCarWeightsSubmenu()
 		{
-			MenuTree randomCarTypesSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random.car_types", "Randomized Car Types");
+			MenuTree randomVanillaCarWeightsSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random.vanilla_car_chances", "Vanilla Car Weights");
+			this.randomVanillaCarWeightsSubmenu = randomVanillaCarWeightsSubmenu;
 
-			Dictionary<string, RandomCarMethod> carMethods = RandomCarMethodExtensions.GetSupportedMethodsList()
-																					  .ToDictionary(m => m.GetSettingName());
-
-			randomCarTypesSubmenu.ListBox<RandomCarMethod>(MenuDisplayMode.Both,
-				"setting:random_car_method",
-				"RANDOM CAR METHOD",
-				() => Config.RandomCarMethod,
-				(value) => Config.RandomCarMethod = value,
-				carMethods,
-				"Choose how car types will be decided. Cycle will randomly cycle through all car types before choosing duplicates.");
-
-			foreach (var carDefaultWeightPair in RandomCarType.VanillaCarChances)
-			{
-				string carName = carDefaultWeightPair.Key;
-				float defaultValue = carDefaultWeightPair.Value;
-				randomCarTypesSubmenu.FloatSlider(MenuDisplayMode.Both,
-					"setting:random_car_chance:" + carName,
-					carName.ToUpper() + " CHANCE",
-					() => Config.GetCarTypeChance(carName),
-					(value) => Config.SetCarTypeChance(carName, value),
-					0.0f, 1.0f,
-					defaultValue,
-					$"The weighted chance that '{carName}' will be randomly chosen (0.0 to ignore this car).");
-			}
-
-			randomCarTypesSubmenu.FloatSlider(MenuDisplayMode.Both,
-				"setting:random_custom_cars_chance",
-				"CUSTOM CARS CHANCE",
-				() => Config.RandomCustomCarsChance,
-				(value) => Config.RandomCustomCarsChance = value,
-				0.0f, 1.0f,
-				0.0f,
-				"The weighted chance that any custom car will be randomly chosen (0.0 to ignore custom cars, skips custom cars manually added in Settings/Config.json).");
-
-			randomCarTypesSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_custom_cars_chance_individual",
-				"INDIVIDUAL CUSTOM CARS CHANCE",
-				() => Config.IndividualRandomCustomCarsChance,
-				(value) => Config.IndividualRandomCustomCarsChance = value,
-				"All custom cars will be given the same weighted chance of appearing, rather than splitting the weight among all custom cars.");
-
-			randomCarTypesSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_car_by_placement",
-				"RANDOM CAR BY PLACEMENT",
-				() => Config.RandomColorByPlacement,
-				(value) => Config.RandomColorByPlacement = value,
-				"Random car types will always be chosen by using the replay's placement as the seed (overrides FIXED RANDOMNESS setting).");
-
-			return randomCarTypesSubmenu;
+			return randomVanillaCarWeightsSubmenu;
 		}
 
-		private MenuTree CreateRandomizedCarColorsSubmenu()
+		private MenuTree CreateCustomCarWeightsSubmenu()
 		{
-			MenuTree randomCarColorsSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random.car_colors", "Randomized Car Colors");
+			MenuTree customSubmenu = new MenuTree("submenu.mod." + Mod.Name.ToLower() + ".random.custom_car_chances", "Custom Car Weights");
+			this.randomCustomCarWeightsSubmenu = customSubmenu;
 
-			Dictionary<string, RandomColorMethod> colorMethods = RandomColorMethodExtensions.GetSupportedMethodsList()
-																							.ToDictionary(m => m.GetSettingName());
+			return customSubmenu;
+		}
 
-			randomCarColorsSubmenu.ListBox<RandomColorMethod>(MenuDisplayMode.Both,
-				"setting:random_color_method",
-				"RANDOM COLOR METHOD",
-				() => Config.RandomColorMethod,
-				(value) => Config.RandomColorMethod = value,
-				colorMethods,
-				"Choose how car colors will be decided. Cycle will randomly cycle through all color presets before choosing duplicates.");
+		private static bool FilterCarType(string carName, string filter)
+		{
+			if (!string.IsNullOrEmpty(filter))
+			{
+				// Use IndexOf because there's no override for Contains with StringComparison.
+				return (carName.IndexOf(filter, StringComparison.InvariantCultureIgnoreCase) != -1);
+			}
+			return true;
+		}
 
-			randomCarColorsSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_colors_by_placement",
-				"RANDOM COLORS BY PLACEMENT",
-				() => Config.RandomColorByPlacement,
-				(value) => Config.RandomColorByPlacement = value,
-				"Random car colors will always be chosen by using the replay's placement as the seed (overrides FIXED RANDOMNESS setting).");
+		private void SetRandomCarWeights(IEnumerable<string> carNames, string filter)
+		{
+			var rng = new System.Random();
+			foreach (string carName in carNames.Where(c => FilterCarType(c, filter)))
+			{
+				Config.SetCarTypeChance(carName, (float)rng.NextDouble(), false);
+			}
+			Config.Save();
+			ResetCentrifugeMenuControls();
+		}
 
-			return randomCarColorsSubmenu;
+		private void SetCarWeights(IEnumerable<string> carNames, string filter, float weight)
+		{
+			weight = Mathf.Clamp(weight, 0.0f, MaxRandomWeight);
+			foreach (string carName in carNames.Where(c => FilterCarType(c, filter)))
+			{
+				Config.SetCarTypeChance(carName, weight, false);
+			}
+			Config.Save();
+			ResetCentrifugeMenuControls();
+		}
+
+		private string OnValidateSetCarWeights(string input)
+		{
+			if (string.IsNullOrEmpty(input) || input == RngKeyword)
+			{
+				return null;
+			}
+			else if (!float.TryParse(input, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
+			{
+				return "This is not a valid decimal number or " + RngKeyword;
+			}
+			return null;
+		}
+
+		private void OnSubmitSetVanillaCarWeights(string input)
+		{
+			if (string.IsNullOrEmpty(input))
+			{
+				// Don't change
+			}
+			else if (input == RngKeyword)
+			{
+				SetRandomCarWeights(RandomCarType.AllowedVanillaCarNames, null);
+
+			}
+			else if (float.TryParse(input, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
+			{
+				SetCarWeights(RandomCarType.AllowedVanillaCarNames, null, result);
+			}
+		}
+
+		void OnSubmitSetCustomCarWeights(string input, string filter)
+		{
+			if (string.IsNullOrEmpty(input))
+			{
+				// Don't change
+			}
+			else if (input == RngKeyword)
+			{
+				SetRandomCarWeights(RandomCarType.CustomCarNames, filter);
+
+			}
+			else if (float.TryParse(input, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
+			{
+				SetCarWeights(RandomCarType.CustomCarNames, filter, result);
+			}
+		}
+
+		private void OnSubmitSetCustomCarWeightsWithFilter(string filter)
+		{
+			// NOTE: It's impossible to open an InputPromptPanel on the same frame as its onSubmit or onPop actions.
+			//       This is because the top menu panel will get popped by the first InputPromptPanel when closing,
+			//       but what will be popped is our nested InputPromptPanel that we just attempted to create.
+			//       To solve this, simply wait one frame before creating our 'nested' InputPromptPanel.
+			// tl;dr: Do this next frame so that our previous InputPromptPanel can properly pop before we create our next one.
+			this.DoNextFrame(() => {
+
+				// Nested prompt to actually ask for the new weight.
+				InputPromptPanel.Create(
+					(out string error, string input) => {
+
+						error = OnValidateSetCarWeights(input);
+
+						if (error == null)
+						{
+							OnSubmitSetCustomCarWeights(input, filter);
+							return true;
+						}
+						return false;
+					},
+					null,
+					"ENTER CUSTOM WEIGHT",
+					null);
+			});
+		}
+
+		private void OnConfirmResetVanillaCarWeights()
+		{
+			var defaultValues = Config.GetDefaultCarWeights();
+			foreach (string carName in RandomCarType.AllowedVanillaCarNames)
+			{
+				defaultValues.TryGetValue(carName, out float defaultValue); // Default weight or 0f.
+
+				Config.SetCarTypeChance(carName, defaultValue, false); // Hold off on auto-saving until afterwards.
+			}
+			Config.Save();
+			ResetCentrifugeMenuControls();
+		}
+
+		private void OnAskResetVanillaCarWeights()
+		{
+			MessageBox.Create("Are you sure you want to reset all vanilla car weights?", "RESET WEIGHTS")
+				.SetButtons(Centrifuge.Distance.Data.MessageButtons.YesNo)
+				.OnConfirm(OnConfirmResetVanillaCarWeights)
+				.Show();
+		}
+
+		private const bool WeightsItalics = false;
+		private const string WeightsPrefix  = (WeightsItalics) ? "[i]"  : "";
+		private const string WeightsPostfix = (WeightsItalics) ? "[/i]" : "";
+
+		private void PopulateCarWeightsSubmenus()
+		{
+			MenuTree vanillaSubmenu = this.randomVanillaCarWeightsSubmenu;
+			MenuTree customSubmenu = this.randomCustomCarWeightsSubmenu;
+			if (vanillaSubmenu.Count > 0 && customSubmenu.Count > 0)
+			{
+				return; // Already populated.
+			}
+			vanillaSubmenu.Clear();
+			customSubmenu.Clear();
+
+
+			vanillaSubmenu.InputPrompt(MenuDisplayMode.Both,
+				"setting:set_vanilla_car_chances",
+				WeightsPrefix + "SET ALL VANILLA CAR WEIGHTS" + WeightsPostfix,
+				OnSubmitSetVanillaCarWeights,
+				null,
+				OnValidateSetCarWeights,
+				"ENTER VANILLA WEIGHT",
+				null,
+				string.Format(CultureInfo.InvariantCulture, // Decimal characters differ by culture, so force invariant to match 0.0
+				"Set the weighted chance for all matching custom cars. Enter a decimal number between 0.0 and {0:0.0}.", MaxRandomWeight) +
+				" Or enter " + RngKeyword + " to assign random weights to each individual car.");
+
+			vanillaSubmenu.ActionButton(MenuDisplayMode.Both,
+				"setting:reset_vanilla_car_chances",
+				WeightsPrefix + "RESET VANILLA CAR WEIGHTS" + WeightsPostfix,
+				OnAskResetVanillaCarWeights,
+				"All vanilla cars will be set back to their default weighted chances of appearing.");
+
+			
+			customSubmenu.InputPrompt(MenuDisplayMode.Both,
+				"setting:set_custom_car_chances",
+				WeightsPrefix + "SET ALL CUSTOM CAR WEIGHTS" + WeightsPostfix,
+				OnSubmitSetCustomCarWeightsWithFilter,
+				null,
+				null,
+				"ENTER FILTER/OR SKIP",
+				null,
+				"Enter a filter to match custom cars by name." +
+				string.Format(CultureInfo.InvariantCulture, // Decimal characters differ by culture, so force invariant to match 0.0
+				" Then set the weighted chance for all matching custom cars. Enter a decimal number between 0.0 and {0:0.0}.", MaxRandomWeight) +
+				" Or enter " + RngKeyword + " to assign random weights to each individual car.");
+
+			customSubmenu.FloatSlider(MenuDisplayMode.Both,
+				"setting:random_custom_cars_default_chance",
+				WeightsPrefix + "DEFAULT CUSTOM CARS WEIGHT" + WeightsPostfix,
+				() => Config.RandomCustomCarsDefaultWeight,
+				(value) => Config.RandomCustomCarsDefaultWeight = value,
+				0.0f, MaxRandomWeight,
+				0.0f,
+				"Default weighted chance for any custom car with an individual weight of 0.0." +
+				" Use this when you want all custom cars to have a chance of appearing, without having to touch the settings after new additions (0.0 to disable).");
+
+			customSubmenu.CheckBox(MenuDisplayMode.Both,
+				"setting:random_custom_cars_split_default_chance",
+				WeightsPrefix + "SPLIT DEFAULT CUSTOM CARS WEIGHT" + WeightsPostfix,
+				() => Config.RandomCustomCarsSplitDefaultWeight,
+				(value) => Config.RandomCustomCarsSplitDefaultWeight = value,
+				"Any custom car using the default weight will split the weighted chance of appearing among all custom cars, rather than being given the same weight (see option above).");
+
+
+			var defaultCarChances = Config.GetDefaultCarWeights();
+			foreach (var carType in RandomCarType.LoadAllCarTypes(false, 0f, 1))
+			{
+				string carName = carType.Name;
+				
+				defaultCarChances.TryGetValue(carName, out float defaultValue); // Default weight or 0f.
+
+				var submenu = (carType.IsVanilla) ? vanillaSubmenu : customSubmenu;
+				string customText = (carType.IsVanilla) ? "" : " custom";
+
+				submenu.FloatSlider(MenuDisplayMode.Both,
+					"setting:random_car_chance:" + carName,
+					carName,//.ToUpper(),
+					() => Config.GetCarTypeChance(carName),
+					(value) => Config.SetCarTypeChance(carName, value),
+					0.0f, MaxRandomWeight,
+					defaultValue,
+					$"Weighted chance that the '{carName}'{customText} car will be randomly chosen (0.0 to ignore this car).");
+			}
 		}
 
 		#region Transpiler Helper Methods
@@ -676,7 +965,7 @@ namespace Distance.ReplayIntensifies
 		/// </remarks>
 		public static int GetMaxAutoReplays()
 		{
-			return Math.Max(Math.Min(G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_, Mod.MaxReplaysAtAll), Mod.OriginalMaxReplays);
+			return Mathf.Clamp(G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_, Mod.OriginalMaxReplays, Mod.MaxReplaysAtAll);
 		}
 
 		/// <summary>
@@ -689,7 +978,7 @@ namespace Distance.ReplayIntensifies
 		{
 			if (Mod.Instance.Config.EnableSeparateMaxForSelectedReplays)
 			{
-				return Math.Max(Math.Min(Mod.Instance.Config.MaxSelectedReplays, Mod.MaxReplaysAtAll), Mod.OriginalMaxReplays);
+				return Mathf.Clamp(Mod.Instance.Config.MaxSelectedReplays, Mod.OriginalMaxReplays, Mod.MaxReplaysAtAll);
 			}
 			else
 			{
@@ -716,7 +1005,7 @@ namespace Distance.ReplayIntensifies
 		/// </remarks>
 		public static int GetMaxSavedLocalReplays()
 		{
-			return Math.Max(Math.Min(Mod.Instance.Config.MaxSavedLocalReplays, Mod.MaxSavedLocalReplaysAtAll), Mod.OriginalMaxSavedLocalReplays);
+			return Mathf.Clamp(Mod.Instance.Config.MaxSavedLocalReplays, Mod.OriginalMaxSavedLocalReplays, Mod.MaxSavedLocalReplaysAtAll);
 		}
 
 		/// <summary>
@@ -727,7 +1016,7 @@ namespace Distance.ReplayIntensifies
 		/// </remarks>
 		public static int GetMaxOnlineLeaderboards()
 		{
-			return Math.Max(Math.Min(Mod.Instance.Config.MaxOnlineLeaderboards, Mod.MaxOnlineLeaderboardsAtAll), Mod.MinOnlineLeaderboards);
+			return Mathf.Clamp(Mod.Instance.Config.MaxOnlineLeaderboards, Mod.MinOnlineLeaderboards, Mod.MaxOnlineLeaderboardsAtAll);
 		}
 
 		/// <summary>

@@ -206,91 +206,82 @@ namespace Distance.ReplayIntensifies
 			set => Set(ExtraRandomnessSeed_ID, value);
 		}
 
-		private const string FixedRandomness_ID = "random.fixed_randomness";
-		public bool FixedRandomness
+		private const string UseRandomCarsFor_ID = "random.local_or_online_cars";
+		public LocalOrOnline UseRandomCarsFor
 		{
-			get => Get<bool>(FixedRandomness_ID);
-			set => Set(FixedRandomness_ID, value);
+			get => Get<LocalOrOnline>(UseRandomCarsFor_ID);
+			set => Set(UseRandomCarsFor_ID, value);
+		}
+
+		private const string UseRandomRivalCars_ID = "random.rival_cars";
+		public bool UseRandomRivalCars
+		{
+			get => Get<bool>(UseRandomRivalCars_ID);
+			set => Set(UseRandomRivalCars_ID, value);
+		}
+
+		private const string RandomRespectBackerCars_ID = "random.respect_backer_cars";
+		public bool RandomRespectBackerCars
+		{
+			get => Get<bool>(RandomRespectBackerCars_ID);
+			set => Set(RandomRespectBackerCars_ID, value);
+		}
+
+		private const string RandomCarSeedMethod_ID = "random.car_seed_method";
+		public RandomSeedMethod RandomCarSeedMethod
+		{
+			get => Get<RandomSeedMethod>(RandomCarSeedMethod_ID);
+			set => Set(RandomCarSeedMethod_ID, value);
+		}
+
+		private const string RandomColorSeedMethod_ID = "random.color_seed_method";
+		public RandomSeedMethod RandomColorSeedMethod
+		{
+			get => Get<RandomSeedMethod>(RandomColorSeedMethod_ID);
+			set => Set(RandomColorSeedMethod_ID, value);
+		}
+
+		private const string RandomCarChoiceMethod_ID = "random.car_choice_method";
+		public RandomCarMethod RandomCarChoiceMethod
+		{
+			get => Get<RandomCarMethod>(RandomCarChoiceMethod_ID);
+			set => Set(RandomCarChoiceMethod_ID, value);
+		}
+
+		private const string RandomColorChoiceMethod_ID = "random.color_choice_method";
+		public RandomColorMethod RandomColorChoiceMethod
+		{
+			get => Get<RandomColorMethod>(RandomColorChoiceMethod_ID);
+			set => Set(RandomColorChoiceMethod_ID, value);
+		}
+
+		private const string RandomRequireCarUnlocks_ID = "random.require_car_unlocks";
+		public bool RandomRequireCarUnlocks
+		{
+			get => Get<bool>(RandomRequireCarUnlocks_ID);
+			set => Set(RandomRequireCarUnlocks_ID, value);
 		}
 
 
-		private const string RandomOfflineCars_ID = "random.offline_cars";
-		public bool RandomOfflineCars
+		private const string RandomCarWeights_ID = "random.car_chances";
+		public Dictionary<string, float> RandomCarWeights
 		{
-			get => Get<bool>(RandomOfflineCars_ID);
-			set => Set(RandomOfflineCars_ID, value);
+			get => Convert<Dictionary<string, float>>(RandomCarWeights_ID, new Dictionary<string, float>(), overwriteNull: true);
+			private set => Set(RandomCarWeights_ID, value);
 		}
 
-		private const string RandomOnlineCars_ID = "random.online_cars";
-		public bool RandomOnlineCars
+		private const string RandomCustomCarsDefaultWeight_ID = "random.custom_cars_default_chance";
+		public float RandomCustomCarsDefaultWeight
 		{
-			get => Get<bool>(RandomOnlineCars_ID);
-			set => Set(RandomOnlineCars_ID, value);
+			get => Get<float>(RandomCustomCarsDefaultWeight_ID);
+			set => Set(RandomCustomCarsDefaultWeight_ID, value);
 		}
 
-		private const string RandomRivalCars_ID = "random.rival_cars";
-		public bool RandomRivalCars
+		private const string RandomCustomCarsSplitDefaultWeight_ID = "random.custom_cars_split_default_chance";
+		public bool RandomCustomCarsSplitDefaultWeight
 		{
-			get => Get<bool>(RandomRivalCars_ID);
-			set => Set(RandomRivalCars_ID, value);
-		}
-
-		private const string RespectBackerCars_ID = "random.respect_backer_cars";
-		public bool RespectBackerCars
-		{
-			get => Get<bool>(RespectBackerCars_ID);
-			set => Set(RespectBackerCars_ID, value);
-		}
-
-
-		private const string RandomCarChances_ID = "random.car_chances";
-		public Dictionary<string, float> RandomCarChances
-		{
-			get => Convert<Dictionary<string, float>>(RandomCarChances_ID, RandomCarType.VanillaCarChances, overwriteNull: true);
-			private set => Set(RandomCarChances_ID, value);
-		}
-
-		private const string RandomCustomCarsChance_ID = "random.custom_cars_chance";
-		public float RandomCustomCarsChance
-		{
-			get => Get<float>(RandomCustomCarsChance_ID);
-			set => Set(RandomCustomCarsChance_ID, value);
-		}
-
-		private const string IndividualRandomCustomCarsChance_ID = "random.custom_cars_chance_individual";
-		public bool IndividualRandomCustomCarsChance
-		{
-			get => Get<bool>(IndividualRandomCustomCarsChance_ID);
-			set => Set(IndividualRandomCustomCarsChance_ID, value);
-		}
-
-
-		private const string RandomCarMethod_ID = "random.car_method";
-		public RandomCarMethod RandomCarMethod
-		{
-			get => Get<RandomCarMethod>(RandomCarMethod_ID);
-			set => Set(RandomCarMethod_ID, value);
-		}
-
-		private const string RandomColorMethod_ID = "random.color_method";
-		public RandomColorMethod RandomColorMethod
-		{
-			get => Get<RandomColorMethod>(RandomColorMethod_ID);
-			set => Set(RandomColorMethod_ID, value);
-		}
-
-		private const string RandomCarByPlacement_ID = "random.car_by_placement";
-		public bool RandomCarByPlacement
-		{
-			get => Get<bool>(RandomCarByPlacement_ID);
-			set => Set(RandomCarByPlacement_ID, value);
-		}
-
-		private const string RandomColorByPlacement_ID = "random.color_by_placement";
-		public bool RandomColorByPlacement
-		{
-			get => Get<bool>(RandomColorByPlacement_ID);
-			set => Set(RandomColorByPlacement_ID, value);
+			get => Get<bool>(RandomCustomCarsSplitDefaultWeight_ID);
+			set => Set(RandomCustomCarsSplitDefaultWeight_ID, value);
 		}
 
 		#endregion
@@ -338,7 +329,7 @@ namespace Distance.ReplayIntensifies
 
 		public float GetCarTypeChance(string carName)
 		{
-			if (this.RandomCarChances.TryGetValue(carName, out float weight))
+			if (this.RandomCarWeights.TryGetValue(carName, out float weight))
 			{
 				return weight;
 			}
@@ -347,13 +338,13 @@ namespace Distance.ReplayIntensifies
 
 		public void SetCarTypeChance(string carName, float weight, bool autoSave = true)
 		{
-			var randomCarChances = this.RandomCarChances;
+			var randomCarChances = this.RandomCarWeights;
 			if (!randomCarChances.TryGetValue(carName, out float oldWeight) || oldWeight != weight)
 			{
 				randomCarChances[carName] = weight;
 				if (autoSave)
 				{
-					this.Save();
+					Save();
 				}
 			}
 		}
@@ -362,22 +353,22 @@ namespace Distance.ReplayIntensifies
 		{
 			if (this.EnableRandomizedCars)
 			{
-				if (isOnline && this.RespectBackerCars && RandomCarType.IsBackerCar(carName))
+				if (isOnline && this.RandomRespectBackerCars && RandomCarType.IsBackerCar(carName))
 				{
 					// Only count setting when used for online cars (we still want backers to be able to randomize their own local replays).
 					return false;
 				}
 				else if (isCarRival)
 				{
-					return this.RandomRivalCars;
+					return this.UseRandomRivalCars;
 				}
 				else if (isOnline)
 				{
-					return this.RandomOnlineCars;
+					return this.UseRandomCarsFor.HasFlag(LocalOrOnline.Online);
 				}
 				else
 				{
-					return this.RandomOfflineCars;
+					return this.UseRandomCarsFor.HasFlag(LocalOrOnline.Local);
 				}
 			}
 			return false;
@@ -466,17 +457,23 @@ namespace Distance.ReplayIntensifies
 
 		private int unfixedRandomCount = 0;
 
-		private System.Random GetRandom(int seed, int placement, bool byPlacement, int skipCount)
+		private System.Random GetRandom(int replaySeed, int placementSeed, RandomSeedMethod seedMethod, int skipCount)
 		{
-			if (byPlacement)
+			int seed;
+			switch (seedMethod)
 			{
-				seed = placement;
-			}
-			else if (!this.FixedRandomness)
-			{
+			case RandomSeedMethod.By_Replay:
+				seed = replaySeed;
+				break;
+			case RandomSeedMethod.By_Placement:
+				seed = placementSeed;
+				break;
+			case RandomSeedMethod.Always_Random:
+			default:
 				// Default constructor seed for System.Random, combined with an increment
 				//  to ensure we're not creating multiple RNGs on the same tick.
 				seed = unchecked(Environment.TickCount + this.unfixedRandomCount++);
+				break;
 			}
 			System.Random rng = new System.Random(seed ^ unchecked((int)this.ExtraRandomnessSeed));
 
@@ -487,20 +484,20 @@ namespace Distance.ReplayIntensifies
 			return rng;
 		}
 
-		public CarReplayData.CarData ChooseRandomCarData(CarReplayData.CarData origCarData, int seed, int placement,
+		public CarReplayData.CarData ChooseRandomCarData(CarReplayData.CarData origCarData, int replaySeed, int placementSeed,
 														 List<RandomCarType> carTypes, List<RandomColorPreset> colorPresets)
 		{
-			var carRng = this.GetRandom(seed, placement, this.RandomCarByPlacement, 0);
-			var colorRng = this.GetRandom(seed, placement, this.RandomColorByPlacement, 1);
+			var carRng = GetRandom(replaySeed, placementSeed, this.RandomCarSeedMethod, 0);
+			var colorRng = GetRandom(replaySeed, placementSeed, this.RandomColorSeedMethod, 1);
 
 			// ==== Choose our car type ====
 
-			if (!RandomCarType.TryCreate(origCarData.name_, 1f, 1, out var carType))
+			if (!RandomCarType.TryCreate(origCarData.name_, 1f, 1, false, out var carType))
 			{
 				carType = RandomCarType.DefaultCarType;
 			}
 
-			var carMethod = this.RandomCarMethod;
+			var carMethod = this.RandomCarChoiceMethod;
 			if (carMethod.IsCarTypes())
 			{
 				if (carTypes != null)
@@ -542,7 +539,7 @@ namespace Distance.ReplayIntensifies
 			// ==== Choose our car colors ====
 
 			CarColors carColors = origCarData.colors_;
-			var colorMethod = this.RandomColorMethod;
+			var colorMethod = this.RandomColorChoiceMethod;
 			if (colorMethod == RandomColorMethod.Default_Colors)
 			{
 				carColors = carType.DefaultColors;
@@ -620,7 +617,7 @@ namespace Distance.ReplayIntensifies
 		{
 			var colorPresets = RandomColorPreset.LoadAllColorPresets(defaultMaxCount: 1);
 
-			if (this.RandomColorByPlacement)
+			if (this.RandomColorSeedMethod == RandomSeedMethod.By_Placement)
 			{
 				// Skip default color preset when coloring by placement (since the color varies by car).
 				colorPresets.RemoveAll((x) => x.IsDefault);
@@ -633,10 +630,11 @@ namespace Distance.ReplayIntensifies
 		{
 			Dictionary<string, RandomCarType> randomCarTypes = new Dictionary<string, RandomCarType>();
 			int explicitCustomCount = 0;
+			bool requireUnlocks = this.RandomRequireCarUnlocks;
 
-			foreach (var carWeightPair in this.RandomCarChances)
+			foreach (var carWeightPair in this.RandomCarWeights)
 			{
-				if (RandomCarType.TryCreate(carWeightPair.Key, carWeightPair.Value, 1, out RandomCarType carType))
+				if (RandomCarType.TryCreate(carWeightPair.Key, carWeightPair.Value, 1, requireUnlocks, out RandomCarType carType))
 				{
 					randomCarTypes.Add(carType.Name, carType);
 					if (!carType.IsVanilla)
@@ -650,10 +648,10 @@ namespace Distance.ReplayIntensifies
 			//int implicitCustomCount = knownCars.Count - Mod.VanillaCarChances.Count - explicitCustomCount;
 			int implicitCustomCount = RandomCarType.CustomCarsCount - explicitCustomCount;
 
-			float implicitCustomWeight = this.RandomCustomCarsChance;
+			float implicitCustomWeight = this.RandomCustomCarsDefaultWeight;
 			if (implicitCustomCount > 0 && implicitCustomWeight > 0f)
 			{
-				if (!this.IndividualRandomCustomCarsChance)
+				if (this.RandomCustomCarsSplitDefaultWeight)
 				{
 					// The chance of choosing a custom car is split up equally across all custom cars.
 					implicitCustomWeight /= implicitCustomCount;
@@ -662,7 +660,7 @@ namespace Distance.ReplayIntensifies
 				foreach (string customCarName in RandomCarType.CustomCarNames)
 				{
 					if (!randomCarTypes.ContainsKey(customCarName) &&
-						RandomCarType.TryCreate(customCarName, implicitCustomWeight, 1, out RandomCarType carType))
+						RandomCarType.TryCreate(customCarName, implicitCustomWeight, 1, requireUnlocks, out RandomCarType carType))
 					{
 						randomCarTypes.Add(carType.Name, carType);
 					}
@@ -677,27 +675,22 @@ namespace Distance.ReplayIntensifies
 				randomCarTypeList.Add(RandomCarType.DefaultCarType);
 			}
 
-			/*if (!carTypesListedOnce)
-			{
-				carTypesListedOnce = true;
-				Mod.Instance.Logger.Debug("====Known Cars====");
-				int ii = 0;
-				foreach (var knownCarPair in RandomCarType.KnownCars)
-				{
-					Mod.Instance.Logger.Debug($"knownCars[{ii}] = \"{knownCarPair.Key}\", index = {knownCarPair.Value}");
-					ii++;
-				}
-				Mod.Instance.Logger.Debug("====Config Cars====");
-				for (int i = 0; i < randomCarTypeList.Count; i++)
-				{
-					Mod.Instance.Logger.Debug($"randomCarTypeList[{i}] = \"{randomCarTypeList[i].Name}\", weight = {randomCarTypeList[i].Weight}");
-				}
-			}*/
-
 			return randomCarTypeList;
 		}
 
-		//private static bool carTypesListedOnce = false;
+		// Default weights for known vanilla cars.
+		public Dictionary<string, float> GetDefaultCarWeights()
+		{
+			return new Dictionary<string, float>
+			{
+				{ "Spectrum",    1.00f * Mod.MaxRandomWeight },
+				{ "Archive",     0.75f * Mod.MaxRandomWeight }, // (Adventure complete car)
+				{ "Interceptor", 0.50f * Mod.MaxRandomWeight }, // (Nitronic Rush car)
+				{ "Encryptor",   0.08f * Mod.MaxRandomWeight }, // (Doot car)
+				{ "Halcyon",     0.05f * Mod.MaxRandomWeight }, // (Shiny Spectrum car)
+				//{ "Catalyst",    0.00f }, // (Kickstarter Backer car, disabled for those that don't have this car unlocked)
+			};
+		}
 
 		#endregion
 
@@ -707,7 +700,7 @@ namespace Distance.ReplayIntensifies
 
 		private void Load()
 		{
-			Config = new Settings("Config");// Mod.FullName);
+			Config = new Settings("Config");
 		}
 
 		public void Awake()
@@ -745,21 +738,20 @@ namespace Distance.ReplayIntensifies
 
 			// Randomized Cars
 			Get(EnableRandomizedCars_ID, false);
-			Get(FixedRandomness_ID, true);
+			Get(UseRandomCarsFor_ID, LocalOrOnline.Local);
+			Get(UseRandomRivalCars_ID, false);
+			Get(RandomRespectBackerCars_ID, true);
+
 			Get(ExtraRandomnessSeed_ID, (uint)0u);
-			Get(RandomOfflineCars_ID, true);
-			Get(RandomOnlineCars_ID, false);
-			Get(RandomRivalCars_ID, false);
-			Get(RespectBackerCars_ID, true);
+			Get(RandomCarSeedMethod_ID, RandomSeedMethod.By_Replay);
+			Get(RandomColorSeedMethod_ID, RandomSeedMethod.By_Replay);
+			Get(RandomCarChoiceMethod_ID, RandomCarMethod.Car_Types);
+			Get(RandomColorChoiceMethod_ID, RandomColorMethod.Color_Presets);
+			Get(RandomRequireCarUnlocks_ID, true);
 
-			Convert(RandomCarChances_ID, RandomCarType.VanillaCarChances, overwriteNull: true);
-			Get(RandomCustomCarsChance_ID, 0.0f);
-			Get(IndividualRandomCustomCarsChance_ID, true);
-
-			Get(RandomCarMethod_ID, RandomCarMethod.Car_Types);
-			Get(RandomColorMethod_ID, RandomColorMethod.Color_Presets);
-			Get(RandomCarByPlacement_ID, false);
-			Get(RandomColorByPlacement_ID, false);
+			Convert(RandomCarWeights_ID, GetDefaultCarWeights(), overwriteNull: true);
+			Get(RandomCustomCarsDefaultWeight_ID, 0.0f);
+			Get(RandomCustomCarsSplitDefaultWeight_ID, false);
 
 			// Save settings, and any defaults that may have been added.
 			Save();

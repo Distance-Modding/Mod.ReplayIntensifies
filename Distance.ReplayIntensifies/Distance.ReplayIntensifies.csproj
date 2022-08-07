@@ -99,8 +99,11 @@
     <Compile Include="Harmony\Assembly-CSharp\ReplayManager\OnAllPlayerEventFinish.cs" />
     <Compile Include="Harmony\Assembly-CSharp\ReplayManager\OnEventModeStarted.cs" />
     <Compile Include="Harmony\Assembly-CSharp\ReplayManager\OnLoadedOnlineReplaysDownloadFinished.cs" />
+    <Compile Include="GhostOrReplay.cs" />
+    <Compile Include="LocalOrOnline.cs" />
     <Compile Include="Randomizer\RandomCarMethod.cs" />
     <Compile Include="Randomizer\RandomColorMethod.cs" />
+    <Compile Include="Randomizer\RandomSeedMethod.cs" />
     <Compile Include="Scripts\ReplayManagerCompoundData.cs" />
     <Compile Include="Helpers\Crc.cs" />
     <Compile Include="Helpers\SteamworksHelper.cs" />

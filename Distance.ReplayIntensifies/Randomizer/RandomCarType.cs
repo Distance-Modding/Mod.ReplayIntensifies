@@ -1,57 +1,89 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace Distance.ReplayIntensifies.Randomizer
 {
 	public class RandomCarType : IComparable<RandomCarType>
 	{
-		public const string BackerCar = "Catalyst";
+		private static Dictionary<string, int> KnownCars => G.Sys.ProfileManager_.knownCars_;
+		private static CarInfo[] CarInfos => G.Sys.ProfileManager_.CarInfos_;
 
-		public static Dictionary<string, float> VanillaCarChances { get; } = new Dictionary<string, float>
-		{
-			{ "Spectrum",    1.00f },
-			{ "Archive",     0.75f },
-			{ "Interceptor", 0.50f },
-			{ "Encryptor",   0.08f }, // (Doot car)
-			{ "Halcyon",     0.05f }, // (Shiny Spectrum car)
-			{ "Catalyst",    0.00f }, // (Kickstarter Backer car, disabled by default)
-		};
-
-		public static RandomCarType DefaultCarType
+		private static bool? allowBackerCar;
+		public static bool AllowBackerCar
 		{
 			get
 			{
-				string defaultCarName = VanillaCarChances.First().Key;
-				if (!KnownCars.TryGetValue(defaultCarName, out int defaultCarIndex))
+				if (!allowBackerCar.HasValue)
 				{
-					var firstKnownCar = KnownCars.First(); // If the known car names have somehow changed, default to the first known car.
-					defaultCarName = firstKnownCar.Key;
-					defaultCarIndex = firstKnownCar.Value;
+					if (Mod.Debug_TestBackerCars)
+					{
+						allowBackerCar = true;
+					}
+					else
+					{
+						// Lazy loading so we don't constantly send requests to steam about the DLC
+						//  and so Steam is initialized when this is first called.
+						allowBackerCar = SteamworksManager.IsSteamBuild_ && G.Sys.SteamworksManager_.OwnsCatalystDLC();
+					}
 				}
-				return new RandomCarType
-				{
-					Name           = defaultCarName,
-					Index          = defaultCarIndex,
-					IsVanilla      = true,
-					MaxCount       = -1,
-					RemainingCount = -1,
-					Weight         = 1.0f,
-				};
+				return allowBackerCar.Value;
 			}
 		}
 
-		public static Dictionary<string, int> KnownCars => G.Sys.ProfileManager_.knownCars_;
-
-		public static IEnumerable<string> VanillaCarNames => VanillaCarChances.Keys;
-
-		public static IEnumerable<string> CustomCarNames
+		private static List<string> backerCarNames;
+		public static List<string> BackerCarNames
 		{
 			get
 			{
-				foreach (string carName in KnownCars.Keys)
+				if (backerCarNames == null)
 				{
-					if (!VanillaCarChances.ContainsKey(carName))
+					// Lazy loading so that we can wait for the ProfileManager to initialize.
+					backerCarNames = new List<string>();
+					foreach (var unlockableCar in ProfileManager.unlockableCars_)
+					{
+						if (unlockableCar.backerVehicle_)
+						{
+							string carName = CarInfos[unlockableCar.index_].name_;
+							if (KnownCars.ContainsKey(carName))
+							{
+								backerCarNames.Add(carName);
+							}
+						}
+					}
+				}
+				return backerCarNames;
+			}
+		}
+
+		private static List<string> vanillaCarNames;
+		public static List<string> VanillaCarNames
+		{
+			get
+			{
+				if (vanillaCarNames == null)
+				{
+					// Lazy loading so that we can wait for the ProfileManager to initialize.
+					vanillaCarNames = new List<string>();
+					foreach (var unlockableCar in ProfileManager.unlockableCars_)
+					{
+						string carName = CarInfos[unlockableCar.index_].name_;
+						if (KnownCars.ContainsKey(carName))
+						{
+							vanillaCarNames.Add(carName);
+						}
+					}
+				}
+				return vanillaCarNames;
+			}
+		}
+
+		public static IEnumerable<string> AllowedVanillaCarNames
+		{
+			get
+			{
+				foreach (string carName in VanillaCarNames)
+				{
+					if (IsAllowedCar(carName))
 					{
 						yield return carName;
 					}
@@ -59,49 +91,90 @@ namespace Distance.ReplayIntensifies.Randomizer
 			}
 		}
 
-		public static int VanillaCarsCount => VanillaCarChances.Count;
+		public static IEnumerable<string> CustomCarNames
+		{
+			get
+			{
+				foreach (string carName in KnownCars.Keys)
+				{
+					if (!IsVanillaCar(carName))
+					{
+						yield return carName;
+					}
+				}
+			}
+		}
 
-		public static int CustomCarsCount => KnownCars.Count - VanillaCarChances.Count;
+		public static RandomCarType DefaultCarType
+		{
+			get
+			{
+				string defaultCarName = CarInfos[ProfileManager.defaultCarIndex_].name_;
+				return new RandomCarType
+				{
+					Name           = defaultCarName,
+					Index          = ProfileManager.defaultCarIndex_,
+					IsVanilla      = IsVanillaCar(defaultCarName),
+					MaxCount       = -1,
+					RemainingCount = -1,
+					Weight         = 1.0f,
+				};
+			}
+		}
 
-		public static bool IsBackerCar(string carName) => carName == BackerCar;
+		public static int VanillaCarsCount => VanillaCarNames.Count;
 
-		public static bool IsVanillaCar(string carName) => VanillaCarChances.ContainsKey(carName);
+		public static int CustomCarsCount => KnownCars.Count - VanillaCarsCount;
 
-		public static bool TryCreate(string carName, float weight, int maxCount, out RandomCarType carType)
+		public static bool IsBackerCar(string carName) => BackerCarNames.Contains(carName);
+
+		public static bool IsVanillaCar(string carName) => VanillaCarNames.Contains(carName);
+
+		// Use IsUnlocked for if the user overrides unlock behavior (helpful for debugging or Steam issues).
+		public static bool IsAllowedCar(string carName) => AllowBackerCar || !IsBackerCar(carName) || IsUnlocked(carName);
+
+		public static bool IsUnlocked(string carName) => G.Sys.ProfileManager_.IsUnlocked(carName);
+
+		public static bool TryCreate(string carName, float weight, int maxCount, bool requireUnlock, out RandomCarType carType)
 		{
 			if (weight > 0f && KnownCars.TryGetValue(carName, out int carIndex))
 			{
-				bool isVanilla = VanillaCarChances.ContainsKey(carName);
-				carType = new RandomCarType
+				if (IsAllowedCar(carName) && (!requireUnlock || IsUnlocked(carName)))
 				{
-					Name           = carName,
-					Index          = carIndex,
-					IsVanilla      = isVanilla,
-					MaxCount       = maxCount,
-					RemainingCount = maxCount,
-					Weight         = weight,
-				};
-				return true;
+					carType = new RandomCarType
+					{
+						Name           = carName,
+						Index          = carIndex,
+						IsVanilla      = IsVanillaCar(carName),
+						MaxCount       = maxCount,
+						RemainingCount = maxCount,
+						Weight         = weight,
+					};
+					return true;
+				}
 			}
 			carType = null;
 			return false;
 		}
 
-		public static List<RandomCarType> LoadAllCarTypes(float defaultWeight = 1f, int defaultMaxCount = 1)
+		public static List<RandomCarType> LoadAllCarTypes(bool requireUnlock, float defaultWeight = 1f, int defaultMaxCount = 1)
 		{
 			List<RandomCarType> randomCarTypes = new List<RandomCarType>();
 
 			foreach (var knownCarPair in KnownCars)
 			{
-				randomCarTypes.Add(new RandomCarType
+				if (IsAllowedCar(knownCarPair.Key) && (!requireUnlock || IsUnlocked(knownCarPair.Key)))
 				{
-					Name           = knownCarPair.Key,
-					Index          = knownCarPair.Value,
-					IsVanilla      = VanillaCarChances.ContainsKey(knownCarPair.Key),
-					MaxCount       = defaultMaxCount,
-					RemainingCount = defaultMaxCount,
-					Weight         = defaultWeight,
-				});
+					randomCarTypes.Add(new RandomCarType
+					{
+						Name           = knownCarPair.Key,
+						Index          = knownCarPair.Value,
+						IsVanilla      = IsVanillaCar(knownCarPair.Key),
+						MaxCount       = defaultMaxCount,
+						RemainingCount = defaultMaxCount,
+						Weight         = defaultWeight,
+					});
+				}
 			}
 
 			randomCarTypes.Sort(); // Sort using RandomCarType IComparable interface.
@@ -125,21 +198,30 @@ namespace Distance.ReplayIntensifies.Randomizer
 
 		public float Weight { get; set; }
 
-		public CarColors DefaultColors => G.Sys.ProfileManager_.CarInfos_[this.Index].colors_;
+		public CarColors DefaultColors => CarInfos[this.Index].colors_;
 
 
 		public int CompareTo(RandomCarType other)
 		{
-			// Vanilla before custom.
-			// Alphabetical order (case sensitive, invariant).
-			if (this.IsVanilla == other.IsVanilla)
+			// Car index order (don't do alphabetical order so that we preserve the same order as seen during car selection).
+			return this.Index.CompareTo(other.Index);
+
+			/*// Vanilla before custom.
+			// Alphabetical order for custom cars (case insensitive, invariant, fallback to case sensitive).
+			if (this.IsVanilla != other.IsVanilla)
 			{
 				return other.IsVanilla.CompareTo(this.IsVanilla);
 			}
 			else
 			{
-				return string.Compare(this.Name, other.Name, StringComparison.InvariantCulture);
-			}
+				return this.Index.CompareTo(other.Index);
+				//int cmp = string.Compare(this.Name, other.Name, StringComparison.InvariantCultureIgnoreCase);
+				//if (cmp == 0)
+				//{
+				//	cmp = string.Compare(this.Name, other.Name, StringComparison.InvariantCulture);
+				//}
+				//return cmp;
+			}*/
 		}
 
 		public void ResetRemainingCount()

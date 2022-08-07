@@ -1,4 +1,5 @@
 ﻿using Distance.ReplayIntensifies.Helpers;
+using Distance.ReplayIntensifies.Randomizer;
 using UnityEngine;
 
 namespace Distance.ReplayIntensifies.Scripts
@@ -33,7 +34,7 @@ namespace Distance.ReplayIntensifies.Scripts
 
 		public bool IsRandomnessEnabled { get; internal set; }
 
-		public int RandomSeed { get; internal set; }
+		public int ReplaySeed { get; internal set; }
 
 		// This car acts like a ghost and will not affect the environment in any way.
 		// Will differ from `IsGhostMode` after the start of `InitPlayerDataReplay` if `simulateNetworkCar_` is true.
@@ -99,23 +100,22 @@ namespace Distance.ReplayIntensifies.Scripts
 				compoundData.IsRandomnessEnabled = false;
 			}
 
-			compoundData.RandomSeed = (int)Crc.Initial32;// compoundData.ReplayLengthMS ^ compoundData.PlayerName.GetHashCode(); // 0;
-
 			if (compoundData.IsRandomnessEnabled)
 			{
 				// Determine a fixed seed to use for the replay car's randomness.
-				if (Mod.Instance.Config.FixedRandomness)
+				if (Mod.Instance.Config.RandomCarSeedMethod   == RandomSeedMethod.By_Replay ||
+					Mod.Instance.Config.RandomColorSeedMethod == RandomSeedMethod.By_Replay)
 				{
 					//System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 
 					// This seems excessive, maybe only take a max number of bytes?
 					// CRC-32 is a much more reliable hash than what's used by Mono.String.GetHashCode(),
-					// The duration of the hash is double that of Mono.String.GetHashCode(),
+					// The calculation duration of the hash is double that of Mono.String.GetHashCode(),
 					//  but the worst you'll get is like 0.4 seconds for 10+ hours of replay data(?)
 					int seed = (int)Crc.Initial32;
 					seed = Crc.Hash32(data.StateBuffer_, seed);
 					seed = Crc.Hash32(data.EventBuffer_, seed);
-					compoundData.RandomSeed = seed;
+					compoundData.ReplaySeed = seed;
 
 					//watch.Stop();
 					//int length = data.StateBuffer_.Length + data.EventBuffer_.Length;
@@ -126,7 +126,7 @@ namespace Distance.ReplayIntensifies.Scripts
 				var rmCompoundData = G.Sys.ReplayManager_.GetComponent<ReplayManagerCompoundData>();
 				if (rmCompoundData)
 				{
-					compoundData.CarData = rmCompoundData.ChooseRandomCarData(data.carData_, compoundData.RandomSeed, compoundData.Placement);
+					compoundData.CarData = rmCompoundData.ChooseRandomCarData(data.carData_, compoundData.ReplaySeed, compoundData.Placement);
 				}
 			}
 
