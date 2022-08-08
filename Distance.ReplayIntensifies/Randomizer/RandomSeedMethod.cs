@@ -1,4 +1,6 @@
-﻿
+﻿using System.Collections.Generic;
+using System.Linq;
+
 namespace Distance.ReplayIntensifies.Randomizer
 {
 	public enum RandomSeedMethod
@@ -18,6 +20,11 @@ namespace Distance.ReplayIntensifies.Randomizer
 				RandomSeedMethod.By_Replay,
 				RandomSeedMethod.By_Placement,
 			};
+		}
+
+		public static Dictionary<string, RandomSeedMethod> GetSettingsEntries()
+		{
+			return GetSupportedMethodsList().ToDictionary(m => m.GetSettingName());
 		}
 
 		public static string GetSettingName(this RandomSeedMethod seedMethod)

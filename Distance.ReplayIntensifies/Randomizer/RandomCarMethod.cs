@@ -1,4 +1,6 @@
-﻿
+﻿using System.Collections.Generic;
+using System.Linq;
+
 namespace Distance.ReplayIntensifies.Randomizer
 {
 	public enum RandomCarMethod
@@ -20,6 +22,11 @@ namespace Distance.ReplayIntensifies.Randomizer
 				RandomCarMethod.Car_Types_Cycle,
 				//RandomCarMethod.Car_Types_Ordered,
 			};
+		}
+
+		public static Dictionary<string, RandomCarMethod> GetSettingsEntries()
+		{
+			return GetSupportedMethodsList().ToDictionary(m => m.GetSettingName());
 		}
 
 		public static string GetSettingName(this RandomCarMethod carMethod)

@@ -1,4 +1,5 @@
-﻿using Distance.ReplayIntensifies.Helpers;
+﻿using Distance.ReplayIntensifies.Data;
+using Distance.ReplayIntensifies.Helpers;
 using Distance.ReplayIntensifies.Randomizer;
 using UnityEngine;
 
@@ -68,10 +69,11 @@ namespace Distance.ReplayIntensifies.Scripts
 			bool isRival = Mod.Instance.Config.IsCarSteamRival(isGhost, data.steamID_);
 			CarLevelOfDetail.Type detailType = Mod.Instance.Config.GetCarDetailType(isGhost, isRival);
 			bool hasOutline = Mod.Instance.Config.GetCarOutline(isGhost, isRival);
-			bool showDataEffect = Mod.Instance.Config.ShowDataEffectInGhostMode;
 
 			// This isn't assigned until the start of `InitPlayerDataReplay`, so use a local variable.
 			bool isGhostBehavior = (isGhost && !PlayerDataReplay.simulateNetworkCar_);
+
+			bool showDataEffect = Mod.Instance.Config.UseDataEffectForMode.HasGhostOrReplay(isGhostBehavior);
 
 			var compoundData = playerDataReplay.gameObject.AddComponent<PlayerDataReplayCompoundData>();
 			compoundData.Player = playerDataReplay;
@@ -79,9 +81,7 @@ namespace Distance.ReplayIntensifies.Scripts
 			compoundData.DetailType = detailType;
 			compoundData.HasOutline = hasOutline;
 			compoundData.IsRival = isRival;
-			// Never show data effect for ghost visuals. Only show in ghost mode if the settings are configured to show it.
-			compoundData.ShowDataEffect = !compoundData.IsGhostVisual && (!isGhostBehavior || showDataEffect);
-
+			compoundData.ShowDataEffect = !compoundData.IsGhostVisual && showDataEffect;
 			compoundData.CarData = compoundData.OriginalCarData = data.carData_;
 
 			var carCompoundData = data.GetComponent<CarReplayDataCompoundData>();

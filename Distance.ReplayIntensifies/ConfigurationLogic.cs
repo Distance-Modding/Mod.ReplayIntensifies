@@ -1,4 +1,5 @@
-﻿using Distance.ReplayIntensifies.Randomizer;
+﻿using Distance.ReplayIntensifies.Data;
+using Distance.ReplayIntensifies.Randomizer;
 using Reactor.API.Configuration;
 using System;
 using System.Collections.Generic;
@@ -32,6 +33,13 @@ namespace Distance.ReplayIntensifies
 			set => Set(FillWithLocalReplays_ID, value);
 		}
 
+
+		private const string LocalReplayTrimming_ID = "leaderboards.local_replay_trimming";
+		public LocalLeaderboardTrimming LocalReplayTrimming
+		{
+			get => Get<LocalLeaderboardTrimming>(LocalReplayTrimming_ID);
+			set => Set(LocalReplayTrimming_ID, value);
+		}
 
 		private const string MaxSavedLocalReplays_ID = "leaderboards.max_saved_local_replays";
 		public int MaxSavedLocalReplays
@@ -119,26 +127,19 @@ namespace Distance.ReplayIntensifies
 			set => Set(EnableUnrestrictedOpponentColors_ID, value);
 		}
 
-		private const string ShowDataEffectInGhostMode_ID = "visual.data_effect_in_ghost_mode";
-		public bool ShowDataEffectInGhostMode
+		private const string UseDataEffectForMode_ID = "visual.use_data_effect_for_mode";
+		public GhostOrReplay UseDataEffectForMode
 		{
-			get => Get<bool>(ShowDataEffectInGhostMode_ID);
-			set => Set(ShowDataEffectInGhostMode_ID, value);
+			get => Get<GhostOrReplay>(UseDataEffectForMode_ID);
+			set => Set(UseDataEffectForMode_ID, value);
 		}
 
 
-		private const string UseRivalStyleForGhosts_ID = "visual.use_rival_style_for_ghosts";
-		public bool UseRivalStyleForGhosts
+		private const string UseRivalStyleForMode_ID = "visual.use_rival_style_for_mode";
+		public GhostOrReplay UseRivalStyleForMode
 		{
-			get => Get<bool>(UseRivalStyleForGhosts_ID);
-			set => Set(UseRivalStyleForGhosts_ID, value);
-		}
-
-		private const string UseRivalStyleForReplays_ID = "visual.use_rival_style_for_replays";
-		public bool UseRivalStyleForReplays
-		{
-			get => Get<bool>(UseRivalStyleForReplays_ID);
-			set => Set(UseRivalStyleForReplays_ID, value);
+			get => Get<GhostOrReplay>(UseRivalStyleForMode_ID);
+			set => Set(UseRivalStyleForMode_ID, value);
 		}
 
 		private const string UseRivalStyleForSelf_ID = "visual.use_rival_style_for_self";
@@ -284,6 +285,28 @@ namespace Distance.ReplayIntensifies
 			set => Set(RandomCustomCarsSplitDefaultWeight_ID, value);
 		}
 
+
+		private const string ReplayModeDisableCinematicCameras_ID = "replaymode.disable_cinematic_cameras";
+		public bool ReplayModeDisableCinematicCameras
+		{
+			get => Get<bool>(ReplayModeDisableCinematicCameras_ID);
+			set => Set(ReplayModeDisableCinematicCameras_ID, value);
+		}
+
+		private const string ReplayModePauseAtStart_ID = "replaymode.pause_at_start";
+		public bool ReplayModePauseAtStart
+		{
+			get => Get<bool>(ReplayModePauseAtStart_ID);
+			set => Set(ReplayModePauseAtStart_ID, value);
+		}
+
+		private const string FinishPreSpectateTime_ID = "replaymode.pre_spectate_time";
+		public float FinishPreSpectateTime
+		{
+			get => Get<float>(FinishPreSpectateTime_ID);
+			set => Set(FinishPreSpectateTime_ID, value);
+		}
+
 		#endregion
 
 		#region Cached
@@ -319,8 +342,7 @@ namespace Distance.ReplayIntensifies
 
 		public bool IsCarSteamRival(bool isGhost, ulong userID)
 		{
-			if (this.EnableSteamRivals &&
-				((isGhost && this.UseRivalStyleForGhosts) || (!isGhost && this.UseRivalStyleForReplays)))
+			if (this.EnableSteamRivals && this.UseRivalStyleForMode.HasGhostOrReplay(isGhost))
 			{
 				return IsSteamRival(userID, false);
 			}
@@ -364,11 +386,11 @@ namespace Distance.ReplayIntensifies
 				}
 				else if (isOnline)
 				{
-					return this.UseRandomCarsFor.HasFlag(LocalOrOnline.Online);
+					return this.UseRandomCarsFor.HasFlag(LocalOrOnline.Online_Replays);
 				}
 				else
 				{
-					return this.UseRandomCarsFor.HasFlag(LocalOrOnline.Local);
+					return this.UseRandomCarsFor.HasFlag(LocalOrOnline.Local_Replays);
 				}
 			}
 			return false;
@@ -712,6 +734,7 @@ namespace Distance.ReplayIntensifies
 			Get(MaxSelectedReplays_ID, 20);
 			Get(FillWithLocalReplays_ID, false);
 
+			Get(LocalReplayTrimming_ID, LocalLeaderboardTrimming.Current);
 			Get(MaxSavedLocalReplays_ID, 500);
 			Get(MaxOnlineLeaderboards_ID, 1000);
 
@@ -723,14 +746,13 @@ namespace Distance.ReplayIntensifies
 			this.MaxLevelOfDetail = Get(MaxDetailLevel_ID, Mod.MaxMaxLevelOfDetail);
 			this.MinLevelOfDetail = Get(MinDetailLevel_ID, CarLevelOfDetail.Level.Speck);
 			Get(EnableUnrestrictedOpponentColors_ID, false);
-			Get(ShowDataEffectInGhostMode_ID, false);
+			Get(UseDataEffectForMode_ID, GhostOrReplay.Replay_Mode);
 
 			// Experimental (disabled by default)
 			Get(EnableSteamRivals_ID, false);
 			Convert(SteamRivals_ID, new Dictionary<ulong, string>(), overwriteNull: true);
 			Get(HighlightRivalsInLeaderboards_ID, true);
-			Get(UseRivalStyleForGhosts_ID, true);
-			Get(UseRivalStyleForReplays_ID, false);
+			Get(UseRivalStyleForMode_ID, GhostOrReplay.Ghost_Mode);
 			Get(UseRivalStyleForSelf_ID, false);
 			Get(RivalBrightness_ID, 1.0f);
 			Get(RivalOutline_ID, true);
@@ -738,7 +760,7 @@ namespace Distance.ReplayIntensifies
 
 			// Randomized Cars
 			Get(EnableRandomizedCars_ID, false);
-			Get(UseRandomCarsFor_ID, LocalOrOnline.Local);
+			Get(UseRandomCarsFor_ID, LocalOrOnline.Local_Replays);
 			Get(UseRandomRivalCars_ID, false);
 			Get(RandomRespectBackerCars_ID, true);
 
@@ -752,6 +774,11 @@ namespace Distance.ReplayIntensifies
 			Convert(RandomCarWeights_ID, GetDefaultCarWeights(), overwriteNull: true);
 			Get(RandomCustomCarsDefaultWeight_ID, 0.0f);
 			Get(RandomCustomCarsSplitDefaultWeight_ID, false);
+
+			// Replay Mode
+			Get(ReplayModeDisableCinematicCameras_ID, false);
+			Get(ReplayModePauseAtStart_ID, false);
+			Get(FinishPreSpectateTime_ID, 5f);
 
 			// Save settings, and any defaults that may have been added.
 			Save();

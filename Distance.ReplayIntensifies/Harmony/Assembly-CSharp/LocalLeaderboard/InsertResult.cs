@@ -1,10 +1,8 @@
-﻿using HarmonyLib;
-using System;
+﻿using Distance.ReplayIntensifies.Data;
+using HarmonyLib;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Reflection.Emit;
-using UnityEngine;
 
 namespace Distance.ReplayIntensifies.Harmony
 {
@@ -12,13 +10,41 @@ namespace Distance.ReplayIntensifies.Harmony
 	/// Patch to extend limit for saved local replays, by allowing replays at higher indexes to be inserted.
 	/// </summary>
 	/// <remarks>
-	/// Required For: Max Saved Local Replays (part 1/2).
+	/// Required For: Local Replay Trimming, Max Saved Local Replays (part 1/2).
 	/// </remarks>
 	[HarmonyPatch(typeof(LocalLeaderboard), nameof(LocalLeaderboard.InsertResult))]
 	internal static class LocalLeaderboard__InsertResult
 	{
+		[HarmonyPrefix]
+		internal static bool Prefix(LocalLeaderboard __instance, out bool __result, string profileName, int profileID, int value, CarReplayData.GUID replayGuid)
+		{
+			int index = __instance.results_.FindLastIndex((ResultInfo val) => val.LessThanOrEqualPlacement(value, __instance.gameModeID_)) + 1;
+			
+			int limit = Mod.GetMaxSavedLocalReplays();
+			var trimming = Mod.Instance.Config.LocalReplayTrimming;
+
+			bool modified = false;
+
+			// Insert if trimming is disabled, or we're under the limit.
+			if (trimming == LocalLeaderboardTrimming.Never || index < limit)
+			{
+				__instance.results_.Insert(index, new ResultInfo(profileName, profileID, value, replayGuid));
+				modified = true;
+			}
+			// Remove if trimming is fully enabled and we're over the count limit.
+			// Although the TrimResults patch already performs this check, we also do it here to track the modified state.
+			if (trimming == LocalLeaderboardTrimming.Always && __instance.results_.Count > limit)
+			{
+				__instance.TrimResults();
+				modified = true;
+			}
+
+			__result = modified;
+			return false; // Don't run original method.
+		}
+
 		// bool InsertResult(string profileName, int profileID, int value, CarReplayData.GUID replayGuid)
-		[HarmonyTranspiler]
+		/*[HarmonyTranspiler]
 		internal static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
 		{
 			Mod.Instance.Logger.Info("Transpiling...");
@@ -48,6 +74,6 @@ namespace Distance.ReplayIntensifies.Harmony
 				}
 			}
 			return codes.AsEnumerable();
-		}
+		}*/
 	}
 }

@@ -1,4 +1,6 @@
-﻿
+﻿using System.Collections.Generic;
+using System.Linq;
+
 namespace Distance.ReplayIntensifies.Randomizer
 {
 	public enum RandomColorMethod
@@ -26,6 +28,11 @@ namespace Distance.ReplayIntensifies.Randomizer
 				RandomColorMethod.RGB,
 				RandomColorMethod.Default_Colors,
 			};
+		}
+
+		public static Dictionary<string, RandomColorMethod> GetSettingsEntries()
+		{
+			return GetSupportedMethodsList().ToDictionary(m => m.GetSettingName());
 		}
 
 		public static string GetSettingName(this RandomColorMethod colorMethod)
