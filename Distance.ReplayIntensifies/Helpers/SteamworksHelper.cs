@@ -28,7 +28,7 @@ namespace Distance.ReplayIntensifies.Helpers
 		// see: <https://stackoverflow.com/a/16208620/7517185>
 		private static Delegate CreateAccessor(Type type, string accessorPath)
 		{
-			Mod.Instance.Logger.Debug($"CreateAccessor: {type.Name}.{accessorPath}");
+			Mod.Log.LogDebug($"CreateAccessor: {type.Name}.{accessorPath}");
 			Stopwatch watch = Stopwatch.StartNew();
 
 			ParameterExpression param = Expression.Parameter(type, "x");
@@ -40,7 +40,7 @@ namespace Distance.ReplayIntensifies.Helpers
 			Delegate compiled = Expression.Lambda(body, param).Compile();
 
 			watch.Stop();
-			Mod.Instance.Logger.Debug($"CreateAccessor: {watch.ElapsedMilliseconds}ms");
+			Mod.Log.LogDebug($"CreateAccessor: {watch.ElapsedMilliseconds}ms");
 			return compiled;
 		}
 

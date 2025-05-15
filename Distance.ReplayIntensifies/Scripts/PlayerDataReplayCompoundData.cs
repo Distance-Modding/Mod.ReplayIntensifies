@@ -56,7 +56,7 @@ namespace Distance.ReplayIntensifies.Scripts
 			}
 			else if (this.IsRival)
 			{
-				return Mod.Instance.Config.RivalBrightness;
+				return Mod.RivalBrightness.Value;
 			}
 			else
 			{
@@ -66,14 +66,14 @@ namespace Distance.ReplayIntensifies.Scripts
 
 		public static PlayerDataReplayCompoundData Create(PlayerDataReplay playerDataReplay, CarReplayData data, bool isGhost)
 		{
-			bool isRival = Mod.Instance.Config.IsCarSteamRival(isGhost, data.steamID_);
-			CarLevelOfDetail.Type detailType = Mod.Instance.Config.GetCarDetailType(isGhost, isRival);
-			bool hasOutline = Mod.Instance.Config.GetCarOutline(isGhost, isRival);
+			bool isRival = Mod.Instance.IsCarSteamRival(isGhost, data.steamID_);
+			CarLevelOfDetail.Type detailType = Mod.Instance.GetCarDetailType(isGhost, isRival);
+			bool hasOutline = Mod.Instance.GetCarOutline(isGhost, isRival);
 
 			// This isn't assigned until the start of `InitPlayerDataReplay`, so use a local variable.
 			bool isGhostBehavior = (isGhost && !PlayerDataReplay.simulateNetworkCar_);
 
-			bool showDataEffect = Mod.Instance.Config.UseDataEffectForMode.HasGhostOrReplay(isGhostBehavior);
+			bool showDataEffect = Mod.UseDataEffectForMode.Value.HasGhostOrReplay(isGhostBehavior);
 
 			var compoundData = playerDataReplay.gameObject.AddComponent<PlayerDataReplayCompoundData>();
 			compoundData.Player = playerDataReplay;
@@ -93,7 +93,7 @@ namespace Distance.ReplayIntensifies.Scripts
 				compoundData.Placement = carCompoundData.Placement;
 			}
 
-			compoundData.IsRandomnessEnabled = Mod.Instance.Config.IsCarRandomnessEnabled(compoundData.IsOnline, isRival, data.carData_.name_);
+			compoundData.IsRandomnessEnabled = Mod.Instance.IsCarRandomnessEnabled(compoundData.IsOnline, isRival, data.carData_.name_);
 			// Never randomize your own replay of your most recent run (so that the car remains the same when clicking view replay).
 			if (compoundData.IsMyPlayer)
 			{
@@ -103,8 +103,8 @@ namespace Distance.ReplayIntensifies.Scripts
 			if (compoundData.IsRandomnessEnabled)
 			{
 				// Determine a fixed seed to use for the replay car's randomness.
-				if (Mod.Instance.Config.RandomCarSeedMethod   == RandomSeedMethod.By_Replay ||
-					Mod.Instance.Config.RandomColorSeedMethod == RandomSeedMethod.By_Replay)
+				if (Mod.RandomCarSeedMethod.Value   == RandomSeedMethod.By_Replay ||
+					Mod.RandomColorSeedMethod.Value == RandomSeedMethod.By_Replay)
 				{
 					//System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
 

@@ -28,22 +28,22 @@ namespace Distance.ReplayIntensifies.Scripts
 				this.CarPresets = RandomColorPreset.CloneListAndReset(this.OriginalCarPresets); // reset remaining counts
 			}
 
-			return Mod.Instance.Config.ChooseRandomCarData(origCarData, replaySeed, placementSeed, this.CarTypes, this.CarPresets);
+			return Mod.Instance.ChooseRandomCarData(origCarData, replaySeed, placementSeed, this.CarTypes, this.CarPresets);
 		}
 
 		public static ReplayManagerCompoundData Create(ReplayManager replayManager)
 		{
 			var rmCompoundData = replayManager.gameObject.GetOrAddComponent<ReplayManagerCompoundData>();
-			if (!Mod.Instance.Config.EnableRandomizedCars)
+			if (!Mod.EnableRandomizedCars.Value)
 			{
 				return rmCompoundData;
 			}
 
 			// Prepare lists for random cars and color presets to choose from.
-			if (Mod.Instance.Config.RandomCarChoiceMethod.IsCarTypes())
+			if (Mod.RandomCarChoiceMethod.Value.IsCarTypes())
 			{
-				rmCompoundData.CarTypes = rmCompoundData.OriginalCarTypes = Mod.Instance.Config.LoadRandomCarTypes();
-				if (Mod.Instance.Config.RandomCarChoiceMethod.IsAvoidDuplicates())
+				rmCompoundData.CarTypes = rmCompoundData.OriginalCarTypes = Mod.Instance.LoadRandomCarTypes();
+				if (Mod.RandomCarChoiceMethod.Value.IsAvoidDuplicates())
 				{
 					rmCompoundData.CarTypes = RandomCarType.CloneListAndReset(rmCompoundData.OriginalCarTypes); // reset remaining counts
 				}
@@ -53,10 +53,10 @@ namespace Distance.ReplayIntensifies.Scripts
 				rmCompoundData.CarTypes = rmCompoundData.OriginalCarTypes = null;
 			}
 
-			if (Mod.Instance.Config.RandomColorChoiceMethod.IsColorPresets())
+			if (Mod.RandomColorChoiceMethod.Value.IsColorPresets())
 			{
-				rmCompoundData.CarPresets = rmCompoundData.OriginalCarPresets = Mod.Instance.Config.LoadRandomColorPresets();
-				if (Mod.Instance.Config.RandomColorChoiceMethod.IsAvoidDuplicates())
+				rmCompoundData.CarPresets = rmCompoundData.OriginalCarPresets = Mod.Instance.LoadRandomColorPresets();
+				if (Mod.RandomColorChoiceMethod.Value.IsAvoidDuplicates())
 				{
 					rmCompoundData.CarPresets = RandomColorPreset.CloneListAndReset(rmCompoundData.OriginalCarPresets); // reset remaining counts
 				}
@@ -67,8 +67,8 @@ namespace Distance.ReplayIntensifies.Scripts
 			}
 
 
-			if (Mod.Instance.Config.RandomCarSeedMethod   == RandomSeedMethod.By_Placement ||
-				Mod.Instance.Config.RandomColorSeedMethod == RandomSeedMethod.By_Placement)
+			if (Mod.RandomCarSeedMethod.Value == RandomSeedMethod.By_Placement ||
+				Mod.RandomColorSeedMethod.Value == RandomSeedMethod.By_Placement)
 			{
 				// Gather all replay cars to evaluate their placement.
 				List<CarReplayData> placements = new List<CarReplayData>();

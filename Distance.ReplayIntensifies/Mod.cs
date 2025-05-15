@@ -1,17 +1,17 @@
-﻿using Centrifuge.Distance.Game;
-using Centrifuge.Distance.GUI.Data;
-using Centrifuge.Distance.GUI.Menu;
+﻿using BepInEx;
+using BepInEx.Configuration;
+using BepInEx.Logging;
 using Distance.ReplayIntensifies.Data;
 using Distance.ReplayIntensifies.Helpers;
 using Distance.ReplayIntensifies.Randomizer;
 using Distance.ReplayIntensifies.Scripts;
-using Reactor.API.Attributes;
-using Reactor.API.Interfaces.Systems;
-using Reactor.API.Logging;
-using Reactor.API.Runtime.Patching;
+using HarmonyLib;
+using JsonFx.Json;
+using JsonFx.Serialization;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -21,13 +21,82 @@ namespace Distance.ReplayIntensifies
 	/// <summary>
 	/// The mod's main class containing its entry point
 	/// </summary>
-	[ModEntryPoint("com.github.trigger-segfault/Distance.ReplayIntensifies")]
-	public sealed class Mod : MonoBehaviour
+	[BepInPlugin(modGUID, modName, modVersion)]
+	public sealed class Mod : BaseUnityPlugin
 	{
-		public const string Name = "ReplayIntensifies";
-		public const string FullName = "Distance." + Name;
-		public const string FriendlyName = "Replay Intensifies";
+		//Mod Details
+		private const string modGUID = "Distance.ReplayIntensifies";
+		private const string modName = "Replay Intensifies";
+		private const string modVersion = "1.3.2";
 
+		//Config Entries
+		public static ConfigEntry<bool> EnableSeparateMaxForSelectedReplays { get; set; }
+		public static ConfigEntry<int> MaxAutoReplays { get; set; }
+		public static ConfigEntry<int> MaxSelectedReplays { get; set; }
+		public static ConfigEntry<bool> FillWithLocalReplays { get; set; }
+		public static ConfigEntry<LocalLeaderboardTrimming> LocalReplayTrimming { get; set; }
+		public static ConfigEntry<int> MaxSavedLocalReplays { get; set; }
+		public static ConfigEntry<int> MaxOnlineLeaderboards { get; set; }
+		public static ConfigEntry<bool> GhostOutline { get; set; }
+		public static ConfigEntry<CarLevelOfDetail.Type> GhostDetailType { get; set; }
+		public static ConfigEntry<bool> ReplayOutline { get; set; }
+		public static ConfigEntry<CarLevelOfDetail.Type> ReplayDetailType { get; set; }
+		public static ConfigEntry<CarLevelOfDetail.Level> MaxLevelOfDetail {
+			get
+			{
+				var value = MaxLevelOfDetail.Value;
+				if (value < MaxMaxLevelOfDetail) value = MaxMaxLevelOfDetail;
+				if (value > MinMaxLevelOfDetail) value = MinMaxLevelOfDetail;
+				MaxLevelOfDetail.Value = value;
+				return MaxLevelOfDetail;
+			}
+			set
+			{
+				if (value.Value < MaxMaxLevelOfDetail) value.Value = MaxMaxLevelOfDetail;
+				if (value.Value > MinMaxLevelOfDetail) value.Value = MinMaxLevelOfDetail;
+				MaxLevelOfDetailCached = value.Value;
+			}
+		}
+		public static ConfigEntry<CarLevelOfDetail.Level> MinLevelOfDetail {
+			get
+			{
+				var value = MinLevelOfDetail.Value;
+				if (value < MaxMinLevelOfDetail) value = MaxMinLevelOfDetail;
+				MinLevelOfDetail.Value = value;
+				return MinLevelOfDetail;
+			}
+			set
+			{
+				if (value.Value < MaxMinLevelOfDetail) value.Value = MaxMinLevelOfDetail;
+				MinLevelOfDetailCached = value.Value;
+			}
+		}
+		public static ConfigEntry<bool> EnableUnrestrictedOpponentColors { get; set; }
+		public static ConfigEntry<GhostOrReplay> UseDataEffectForMode { get; set; }
+		public static ConfigEntry<GhostOrReplay> UseRivalStyleForMode { get; set; }
+		public static ConfigEntry<bool> UseRivalStyleForSelf { get; set; }
+		public static ConfigEntry<float> RivalBrightness { get; set; }
+		public static ConfigEntry<bool> RivalOutline { get; set; }
+		public static ConfigEntry<CarLevelOfDetail.Type> RivalDetailType { get; set; }
+		public static ConfigEntry<bool> EnableSteamRivals { get; set; }
+		public static ConfigEntry<bool> HighlightRivalsInLeaderboards { get; set; }
+		public static ConfigEntry<bool> EnableRandomizedCars { get; set; }
+		public static ConfigEntry<uint> ExtraRandomnessSeed { get; set; }
+		public static ConfigEntry<LocalOrOnline> UseRandomCarsFor { get; set; }
+		public static ConfigEntry<bool> UseRandomRivalCars { get; set; }
+		public static ConfigEntry<bool> RandomRespectBackerCars { get; set; }
+		public static ConfigEntry<RandomSeedMethod> RandomCarSeedMethod { get; set; }
+		public static ConfigEntry<RandomSeedMethod> RandomColorSeedMethod { get; set; }
+		public static ConfigEntry<RandomCarMethod> RandomCarChoiceMethod { get; set; }
+		public static ConfigEntry<RandomColorMethod> RandomColorChoiceMethod { get; set; }
+		public static ConfigEntry<bool> RandomRequireCarUnlocks { get; set; }
+		public static ConfigEntry<float> RandomCustomCarsDefaultWeight { get; set; }
+		public static ConfigEntry<bool> RandomCustomCarsSplitDefaultWeight { get; set; }
+		public static ConfigEntry<bool> ReplayModeDisableCinematicCameras { get; set; }
+		public static ConfigEntry<bool> ReplayModePauseAtStart { get; set; }
+		public static ConfigEntry<float> FinishPreSpectateTime { get; set; }
+
+		//Const
 		public const int OriginalMaxReplays = 20;
 		public const int OriginalMaxSavedLocalReplays = 20;
 		public const int OriginalMaxOnlineLeaderboards = 1000;
@@ -40,9 +109,6 @@ namespace Distance.ReplayIntensifies
 
 		public const float MaxRandomWeight = 100f;
 
-		// Keyword used in input prompts to randomize the result.
-		public const string RngKeyword = "*";
-
 		public const bool Debug_TestBackerCars = false;
 
 		// In-Focus LODs are only used for the replay car with camera focus.
@@ -52,23 +118,19 @@ namespace Distance.ReplayIntensifies
 		public const CarLevelOfDetail.Level MinMaxLevelOfDetail = CarLevelOfDetail.Level.Speck; // or VeryFar
 		public const CarLevelOfDetail.Level MaxMinLevelOfDetail = CarLevelOfDetail.Level.InFocus; // Allow forcing up to In-Focus
 
+		//Public Variables
+		public static Dictionary<ulong, string> SteamRivals { get; set; }
+		public static Dictionary<string, float> RandomCarWeights { get; set; }
 
 
-		public static Mod Instance { get; private set; }
+		// Cached property values for faster accessing.
+		public static CarLevelOfDetail.Level MaxLevelOfDetailCached { get; private set; }
+		public static CarLevelOfDetail.Level MinLevelOfDetailCached { get; private set; }
 
-		public IManager Manager { get; private set; }
-
-		public Log Logger { get; private set; }
-
-		public ConfigurationLogic Config { get; private set; }
-
-		// Needed to update slider values after a set-all action,
-		// and also prevent these same sliders from forcing the value back
-		private CentrifugeMenu currentCentrifugeMenu;
-
-		// Keep hold of these to populate at a later time.
-		private MenuTree randomVanillaCarWeightsSubmenu;
-		private MenuTree randomCustomCarWeightsSubmenu;
+		//Other
+		private static readonly Harmony harmony = new Harmony(modGUID);
+		public static ManualLogSource Log = new ManualLogSource(modName);
+		public static Mod Instance;
 
 		/// <summary>
 		/// Method called as soon as the mod is loaded.
@@ -77,33 +139,18 @@ namespace Distance.ReplayIntensifies
 		///				function is called. Loading assets here can lead to
 		///				unpredictable behaviour and crashes!
 		/// </summary>
-		public void Initialize(IManager manager)
+		public void Awake()
 		{
 			// Do not destroy the current game object when loading a new scene
 			DontDestroyOnLoad(this);
 
-			Instance = this;
-			Manager = manager;
-
-			Logger = LogManager.GetForCurrentAssembly();
-			Logger.Info(Mod.Name + ": Initializing...");
-
-			Config = this.gameObject.AddComponent<ConfigurationLogic>();
-
-			try
+			if (Instance == null)
 			{
-				// Never ever EVER use this!!!
-				// It's the same as below (with `GetCallingAssembly`) wrapped around a silent catch-all.
-				//RuntimePatcher.AutoPatch();
+				Instance = this;
+			}
 
-				RuntimePatcher.HarmonyInstance.PatchAll(Assembly.GetExecutingAssembly());
-			}
-			catch (Exception ex)
-			{
-				Logger.Error(Mod.Name + ": Error during Harmony.PatchAll()");
-				Logger.Exception(ex);
-				throw;
-			}
+			Log = BepInEx.Logging.Logger.CreateLogSource(modGUID);
+
 
 			try
 			{
@@ -111,71 +158,376 @@ namespace Distance.ReplayIntensifies
 			}
 			catch (Exception ex)
 			{
-				Logger.Error(Mod.Name + ": Error during SteamworksHelper.Init()");
-				Logger.Exception(ex);
+				Log.LogError(modName + ": Error during SteamworksHelper.Init()");
+				Log.LogError(ex);
 				throw;
 			}
+
+			
+
+			UseDataEffectForMode = Config.Bind("Rendering Settings",
+				"USE DATA EFFECT FOR MODE",
+				GhostOrReplay.Replay_Mode,
+				new ConfigDescription("Which modes to use the data materialization spawn/finish-despawn effect in for non-ghost car styles."));
+
+			GhostDetailType = Config.Bind("Rendering Settings",
+				"GHOST CAR STYLE",
+				CarLevelOfDetail.Type.Ghost,
+				new ConfigDescription("Change the visual detail type of Ghost cars."));
+
+			GhostOutline = Config.Bind("Rendering Settings",
+				"GHOST OUTLINE",
+				true,
+				new ConfigDescription("Whether or not Ghost cars have an outline"));
+
+			ReplayDetailType = Config.Bind("Rendering Settings",
+				"REPLAY CAR STYLE",
+				CarLevelOfDetail.Type.Replay,
+				new ConfigDescription("Change the visual detail type of Replay Mode cars."));
+
+			ReplayOutline = Config.Bind("Rendering Settings",
+				"REPLAY OUTLINE",
+				false,
+				new ConfigDescription("Whether or not Replay Mode cars have an outline"));
+
+			MaxLevelOfDetail = Config.Bind("Rendering Settings",
+				"MAX CAR LEVEL OF DETAIL",
+				MaxMaxLevelOfDetail,
+				new ConfigDescription("Change the highest level of detail that opponent cars will render with." +
+				" Lowering Max Level of Detail can improve performance when playing with more ghosts."));
+
+			MinLevelOfDetail = Config.Bind("Rendering Settings",
+				"MIN CAR LEVEL OF DETAIL",
+				CarLevelOfDetail.Level.Speck,
+				new ConfigDescription("Change the lowest level of detail that opponent cars will render with." +
+				" Raising Min Level of Detail can decrease performance when playing with more ghosts." +
+				" NOTE: In-Focus will force a car's LOD to be higher than normal for non-camera-focused cars."));
+			
+			EnableSeparateMaxForSelectedReplays = Config.Bind("Limits Settings",
+				"USE MAX SELECTED REPLAYS",
+				false,
+				new ConfigDescription("Use a separate maximum for the number of selected ghosts from the leaderboards menu."));
+
+			MaxAutoReplays = Config.Bind("Limits Settings",
+				"MAX AUTO REPLAYS",
+				5,
+				new ConfigDescription("Maximum number of ghosts that will auto-load when playing a level. This is the [i]GHOSTS IN ARCADE COUNT[/i] option from the Replays menu, and is included here for convenience.",
+					new AcceptableValueRange<int>(1, MaxReplaysAtAll)));
+
+			MaxSelectedReplays = Config.Bind("Limits Settings",
+				"MAX SELECTED REPLAYS",
+				20,
+				new ConfigDescription("Maximum number of ghosts that will be loaded when selecting from the leaderboards menu.",
+					new AcceptableValueRange<int>(OriginalMaxReplays, MaxReplaysAtAll)));
+
+			MaxOnlineLeaderboards = Config.Bind("Limits Settings",
+				"MAX ONLINE LEADERBOARD RANKS",
+				1000,
+				new ConfigDescription("Maximum number of leaderboard ranks shown for Friends and Online tabs.",
+					new AcceptableValueRange<int>(MinOnlineLeaderboards, MaxOnlineLeaderboardsAtAll)));
+
+			MaxSavedLocalReplays = Config.Bind("Limits Settings",
+				"MAX SAVED LOCAL REPLAYS",
+				500,
+				new ConfigDescription("Maximum number of local leaderboard replays that will be saved.\n[FF0000]WARNING:[-] Completing a map with more than this number of ghosts will remove ALL ghosts past the maximum.",
+					new AcceptableValueRange<int>(OriginalMaxSavedLocalReplays, MaxSavedLocalReplaysAtAll)));
+
+			LocalReplayTrimming = Config.Bind("Limits Settings",
+				"LOCAL REPLAY TRIMMING",
+				LocalLeaderboardTrimming.Current,
+				new ConfigDescription("When creating a local leaderboard replay past the placement limit, choose whether replays are Never deleted, only your Current Run gets deleted, or if all replays past the limit Always get deleted."));
+
+			FillWithLocalReplays = Config.Bind("Limits Settings",
+				"FILL WITH LOCAL REPLAYS",
+				false,
+				new ConfigDescription("Fill remaining auto slots with local replays when there aren't enough online replays to load."));
+
+			EnableUnrestrictedOpponentColors = Config.Bind("Limits Settings",
+				"ENABLE UNRESTRICTED OPPONENT COLORS",
+				false,
+				new ConfigDescription("Online opponents and non-[i]Ghost Detail Type[/i] cars will NOT have their colors clamped, allowing for extremely bright cars." +
+				" Bright cars are made by editing color preset files and changing the color channels to very large values."));
+
+			ReplayModeDisableCinematicCameras = Config.Bind("Replay Mode Settings",
+				"DISABLE CINEMATIC CAMERAS",
+				false,
+				new ConfigDescription("Turn off cinematic camera triggers in replay mode, allowing for more flexible camera movement."));
+
+			ReplayModePauseAtStart = Config.Bind("Replay Mode Settings",
+				"PAUSE AT START",
+				false,
+				new ConfigDescription("Pause at match start during replay mode, allowing easier tracking of extremely short runs."));
+
+			FinishPreSpectateTime = Config.Bind("Replay Mode Settings",
+				"FINISH PRE-SPECTATE TIME",
+				5f,
+				new ConfigDescription("Change the number of seconds to wait after finishing a level before going into spectate mode.",
+					new AcceptableValueRange<float>(0.02f, 300f)));
+
+			SteamRivals = LoadSteamRivals();
+
+			EnableSteamRivals = Config.Bind("Steam Rival Settings",
+				"ENABLE STEAM RIVALS",
+				false,
+				new ConfigDescription("Enable the Steam Rivals feature."));
+
+			HighlightRivalsInLeaderboards = Config.Bind("Steam Rival Settings",
+				"HIGHLIGHT RIVALS IN LEADERBOARDS",
+				false,
+				new ConfigDescription("Steam Rivals listed in the level select leaderboards menu will be colored differently."));
+
+			UseRivalStyleForMode = Config.Bind("Steam Rival Settings",
+				"USE CAR STYLE FOR MODE",
+				GhostOrReplay.Ghost_Mode,
+				new ConfigDescription("Which modes to use the Steam Rival car style in."));
+
+			UseRivalStyleForSelf = Config.Bind("Steam Rival Settings",
+				"USE CAR STYLE FOR SELF",
+				false,
+				new ConfigDescription("Steam Rival car styles will also be used for your own ghosts."));
+
+			RivalDetailType = Config.Bind("Steam Rival Settings",
+				"RIVAL CAR STYLE",
+				CarLevelOfDetail.Type.Networked,
+				new ConfigDescription("Change the visual detail type of Steam Rival cars."));
+
+			RivalOutline = Config.Bind("Steam Rival Settings",
+				"RIVAL CAR OUTLINE",
+				true,
+				new ConfigDescription("Change whether the Steam Rival has an outline"));
+
+			RivalBrightness = Config.Bind("Steam Rival Settings",
+				"RIVAL OUTLINE BRIGHTNESS",
+				1.0f,
+				new ConfigDescription("Change the brightness for Steam Rival car outlines." +
+				" NOTE: Brightness values higher than 1.0 will only increase the intensity of flames and wing trails.",
+					new AcceptableValueRange<float>(0.05f, 10f)));
+
+			RandomCarWeights = LoadCarWeights();
+
+			EnableRandomizedCars = Config.Bind("Randomized Cars Settings",
+				"ENABLE RANDOMIZED CARS",
+				false,
+				new ConfigDescription("Enable the randomized cars feature, allowing for more variety with opponents."));
+
+			UseRandomCarsFor = Config.Bind("Randomized Cars Settings",
+				"USE RANDOM CARS FOR",
+				LocalOrOnline.Local_Replays,
+				new ConfigDescription("Choose whether local and/or online leaderboards replays will be randomized." +
+				" 'Online' is not recommended for normal play, since a player's car can be considered part of 'their identity' in the leaderboards."));
+
+			UseRandomRivalCars = Config.Bind("Randomized Cars Settings",
+				"USE RANDOM RIVAL CARS",
+				false,
+				new ConfigDescription("Rival cars will be randomized (STEAM RIVALS feature must be enabled)."));
+
+			RandomRespectBackerCars = Config.Bind("Randomized Cars Settings",
+				"RESPECT KICKSTARTER BACKERS",
+				true,
+				new ConfigDescription("Disable randomizing online replays that use the Kickstarter backer car."));
+
+			ExtraRandomnessSeed = Config.Bind("Randomized Cars Settings",
+				"EXTRA RANDOMNESS SEED",
+				0u,
+				new ConfigDescription("Change up the fixed randomness for replays a little.",
+					new AcceptableValueRange<uint>(0u, 10u)));
+
+			/*randomSubmenu.InputPrompt(MenuDisplayMode.Both,
+				"setting:extra_randomness",
+				"EXTRA RANDOMNESS SEED",
+				OnSubmitExtraRandomnessSeed,
+				null,
+				OnValidateExtraRandomnessSeed,
+				"ENTER AN INTEGER",
+				null,
+				"Change up the fixed randomness for replays a little." +
+				$" Enter a number between 0 and {uint.MaxValue} (0x{uint.MaxValue:X8}). Or enter " + RngKeyword + " to generate a random number.")
+				.WithDefaultValue(() => Config.ExtraRandomnessSeed.ToString());*/
+
+			const string SeedMethodDescription =
+				" By Replay will use the replay data as the seed, so that each replay will always be the same." +
+				" By Placement will use the placement between all replays as the seed.";
+
+			const string ChoiceMethodDescription =
+				" Cycle will randomly cycle through choices once before choosing duplicates.";
+
+			RandomCarSeedMethod = Config.Bind("Randomized Car Settings",
+				"CAR SEED METHOD",
+				RandomSeedMethod.By_Replay,
+				new ConfigDescription("Change how randomness is determined for car types." + SeedMethodDescription));
+
+			RandomColorSeedMethod = Config.Bind("Randomized Car Settings",
+				"COLOR SEED METHOD",
+				RandomSeedMethod.By_Replay,
+				new ConfigDescription("Change how randomness is determined for car colors." + SeedMethodDescription));
+
+			RandomCarChoiceMethod = Config.Bind("Randomized Car Settings",
+				"CAR CHOICE METHOD",
+				RandomCarMethod.Car_Types,
+                new ConfigDescription("Choose how random car types will be decided." + ChoiceMethodDescription));
+
+			RandomColorChoiceMethod = Config.Bind("Randomized Car Settings",
+				"COLOR CHOICE METHOD",
+				RandomColorMethod.Color_Presets,
+				new ConfigDescription("Choose how random car colors will be decided." + ChoiceMethodDescription));
+
+			RandomCustomCarsDefaultWeight = Config.Bind("Randomized Car Settings",
+				"DEFAULT CUSTOM CARS WEIGHT",
+				0.0f,
+				new ConfigDescription("Default weighted chance for any custom car with an individual weight of 0.0." +
+				" Use this when you want all custom cars to have a chance of appearing, without having to touch the settings after new additions (0.0 to disable).",
+					new AcceptableValueRange<float>(0.0f, MaxRandomWeight)));
+
+			RandomCustomCarsSplitDefaultWeight = Config.Bind("Randomized Car Settings",
+				"SPLIT DEFAULT CUSTOM CARS WEIGHT",
+				false,
+				new ConfigDescription("Any custom car using the default weight will split the weighted chance of appearing among all custom cars, rather than being given the same weight (see option above)."));
+
+			RandomRequireCarUnlocks = Config.Bind("Randomized Car Settings",
+				"REQUIRE CAR UNLOCKS",
+				false,
+				new ConfigDescription("Disable using random car types that you haven't unlocked yet."));
+
+			MaxAutoReplays.SettingChanged += OnConfigChanged;
+
+			Log.LogInfo(modName + ": Initializing...");
+			harmony.PatchAll();
+			Log.LogInfo(modName + ": Initialized!");
+		}
+
+		private void OnConfigChanged(object sender, EventArgs e)
+		{
+			SettingChangedEventArgs settingChangedEventArgs = e as SettingChangedEventArgs;
+
+			if(sender == MaxAutoReplays)
+            {
+				G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_ = (int)settingChangedEventArgs.ChangedSetting.BoxedValue;
+				G.Sys.OptionsManager_.Replay_.Save();
+				return;
+            }
+
+			if(sender == RivalBrightness)
+            {
+				// Treat changes to this value as an event since we don't have many other options for detecting if our own menu is closed.
+				//  (GSL never broadcasts the Events.GUI.MenuClosed static event)
+				// It's important to broadcast this so that outline brightnesses can be updated mid-game.
+				Events.ReplayOptionsMenu.MenuClose.Broadcast(null);
+				return;
+			}
+
+			if(sender == ExtraRandomnessSeed)
+            {
+
+            }
+
+			if (settingChangedEventArgs == null) return;
+		}
+
+		public void SaveDictionary(Dictionary<string, float> dic)
+        {
+			string fileName = "Car Weights.json";
+			string rootDirectory = Path.GetDirectoryName(Assembly.GetCallingAssembly().Location);
+			DataWriterSettings st = new DataWriterSettings { PrettyPrint = true };
+			JsonWriter writer = new JsonWriter(st);
+			try
+			{
+				using (var sw = new StreamWriter(Path.Combine(rootDirectory, fileName), false))
+				{
+					sw.WriteLine(writer.Write(dic));
+				}
+			}
+			catch (Exception e)
+			{
+				Log.LogWarning(e);
+			}
+		}
+
+		public void SaveDictionary(Dictionary<ulong, string> dic)
+		{
+			string fileName = "Steam Rivals.json";
+			string rootDirectory = Path.GetDirectoryName(Assembly.GetCallingAssembly().Location);
+			DataWriterSettings st = new DataWriterSettings { PrettyPrint = true };
+			JsonWriter writer = new JsonWriter(st);
+			try
+			{
+				using (var sw = new StreamWriter(Path.Combine(rootDirectory, fileName), false))
+				{
+					sw.WriteLine(writer.Write(dic));
+				}
+			}
+			catch (Exception e)
+			{
+				Log.LogWarning(e);
+			}
+		}
+
+		private Dictionary<string, float> LoadCarWeights()
+        {
+			string fileName = "Car Weights.json";
+			string rootDirectory = Path.GetDirectoryName(Assembly.GetCallingAssembly().Location);
+
+			try
+            {
+				using (var sr = new StreamReader(Path.Combine(rootDirectory, fileName)))
+                {
+					string json = sr.ReadToEnd();
+					JsonReader reader = new JsonReader();
+					Dictionary<string, float> WeightDictionary = reader.Read<Dictionary<string, float>>(json);
+
+					return WeightDictionary;
+				}
+            }
+			catch(DirectoryNotFoundException ex)
+            {
+				Log.LogWarning("Failed to load car randomization weights due to the directory not existing. \nNew weights will be saved when necessary.");
+				return new Dictionary<string, float>();
+			}
+			catch(Exception ex)
+            {
+				Log.LogWarning("Failed to load car randomization weights");
+				Log.LogWarning(ex);
+				return new Dictionary<string, float>();
+			}
+        }
+
+		private Dictionary<ulong, string> LoadSteamRivals()
+        {
+			string fileName = "Steam Rivals.json";
+			string rootDirectory = Path.GetDirectoryName(Assembly.GetCallingAssembly().Location);
 
 			try
 			{
-				CreateSettingsMenu();
-				// Subscribe to menu open so that we have a handle to the current CentrifugeMenu.
-				// We need it to ensure controls are reset after other settings change specific values.
-				// This isn't just to reflect changes in the controls either, some controls will outright FORCE their value
-				//  setter after coming back from a message box, so the only way to stop that is to reset the menu controls.
-				Events.GUI.MenuOpened.Subscribe(OnCentrifugeMenuOpened);
+				using (var sr = new StreamReader(Path.Combine(rootDirectory, fileName)))
+				{
+					string json = sr.ReadToEnd();
+					JsonReader reader = new JsonReader();
+					Dictionary<string, string> SteamRivalDictionary = reader.Read<Dictionary<string, string>>(json);
+
+					Dictionary<ulong, string> CorrectedDictionary = new Dictionary<ulong, string>();
+
+					foreach(KeyValuePair<string, string> kvPair in SteamRivalDictionary)
+                    {
+						CorrectedDictionary.Add(ulong.Parse(kvPair.Key), kvPair.Value);
+                    }
+
+					return CorrectedDictionary;
+				}
+			}
+			catch (DirectoryNotFoundException ex)
+			{
+				Log.LogWarning("Failed to load Steam Rivals due to the directory not existing. \nNew Rivals will be saved when necessary.");
+				return new Dictionary<ulong, string>();
 			}
 			catch (Exception ex)
 			{
-				Logger.Error(Mod.Name + ": Error during CreateSettingsMenu()");
-				Logger.Exception(ex);
-				throw;
+				Log.LogWarning("Failed to load Steam Rivals");
+				Log.LogWarning("Exception Name: " + ex.GetType().ToString());
+				Log.LogWarning(ex);
+				return new Dictionary<ulong, string>();
 			}
-
-			Logger.Info(Mod.Name + ": Initialized!");
-		}
-
-		private void OnCentrifugeMenuOpened(Events.GUI.MenuOpened.Data data)
-		{
-			this.currentCentrifugeMenu = data.menu;
-
-			// Ensure these menus are populated after all car data is loaded.
-			//  (this function will only run the first time it's called).
-			// NOTE: This event is called *after* a menu is opened and its controls are displayed,
-			//       so we're relying on hitting this event in a parent menu first.
-			PopulateCarWeightsSubmenus();
-		}
+        }
 
 		#region Settings Helpers
-
-		private void ResetCentrifugeMenuControls()
-		{
-			// Update all slider values on the page by rebuilding the page controls.
-			if (this.currentCentrifugeMenu != null)
-			{
-				// FUN TIMES: After leaving the message box, all sliders have their Start function called.
-				//            Guess what happens in Start? onChange is triggered.
-				//            Guess what happens in onChange? setFn using the slider value is called.
-				// SO TIME TO TEAR ALL THIS CRAP OUT AND STOP IT FROM DOING ANY
-				// DAMAGE BY RESETTING THE MENU BECAUSE OH GOD THIS IS AWFUL.
-
-				// Everything is rebuilt here, so it doesn't matter how badly we mess things up.
-				this.currentCentrifugeMenu.SwitchPage(0, true, true);
-			}
-		}
-
-		/*private static Dictionary<string, CarStyle> GetCarStyleSettingsEntries()
-		{
-			return new Dictionary<string, CarStyle>
-			{
-				{ "Ghost (Outline)",        CarStyle.Ghost_Outline },
-				{ "Ghost (no Outline)",     CarStyle.Ghost_NoOutline },
-				{ "Networked (Outline)",    CarStyle.Networked_Outline },
-				{ "Networked (no Outline)", CarStyle.Networked_NoOutline },
-				{ "Replay (Outline)",       CarStyle.Replay_Outline },
-				{ "Replay (no Outline)",    CarStyle.Replay_NoOutline },
-			};
-		}*/
 
 		private static Dictionary<string, CarLevelOfDetail.Level> GetLevelOfDetailSettingsEntries()
 		{
@@ -249,28 +601,15 @@ namespace Distance.ReplayIntensifies
 
 		private string OnValidateFloatOrRng(string input)
 		{
-			if (string.IsNullOrEmpty(input) || input == RngKeyword)
+			if (string.IsNullOrEmpty(input))
 			{
 				return null;
 			}
 			else if (!float.TryParse(input, out float result) || float.IsNaN(result) || float.IsInfinity(result))
 			{
-				return "This is not a valid decimal number or " + RngKeyword;
+				return "This is not a valid decimal number or ";
 			}
 			return null;
-		}
-
-		private void OnSubmitFinishPreSpectateTime(string input)
-		{
-			if (string.IsNullOrEmpty(input))
-			{
-				// Don't change
-			}
-			else if (float.TryParse(input, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
-			{
-				// Allow extremely high times for essentially disabling finish-spectating.
-				Config.FinishPreSpectateTime = Mathf.Clamp(result, 0.02f, 1_000_000f);
-			}
 		}
 
 		private void OnSubmitRivalOutlineBrightness(string input)
@@ -284,9 +623,9 @@ namespace Distance.ReplayIntensifies
 				// Allow extremely high outline brightness (which doesn't affect outline itself, but does affect jets and wings).
 				// Anything higher than 100,000 will produce black splotches from the intensity.
 				result = Mathf.Clamp(result, 0.05f, 100_000f);
-				if (Config.RivalBrightness != result)
+				if (RivalBrightness.Value != result)
 				{
-					Config.RivalBrightness = result;
+					RivalBrightness.Value = result;
 
 					// Treat changes to this value as an event since we don't have many other options for detecting if our own menu is closed.
 					//  (GSL never broadcasts the Events.GUI.MenuClosed static event)
@@ -298,13 +637,13 @@ namespace Distance.ReplayIntensifies
 
 		private string OnValidateExtraRandomnessSeed(string input)
 		{
-			if (string.IsNullOrEmpty(input) || input == RngKeyword)
+			if (string.IsNullOrEmpty(input))
 			{
 				return null;
 			}
 			else if (!uint.TryParse(input, out _))
 			{
-				return $"Not a valid integer between 0 and {uint.MaxValue} or " + RngKeyword;
+				return $"Not a valid integer between 0 and {uint.MaxValue} or ";
 			}
 			return null;
 		}
@@ -315,16 +654,9 @@ namespace Distance.ReplayIntensifies
 			{
 				// Don't change
 			}
-			else if (input == RngKeyword) // Generate a random number.
-			{
-				var rng = new System.Random();
-				// System.Random.Next() only generates something like a 30-bit integer,
-				//  so cut that in half and use two random numbers for the LOWORD and HIWORD.
-				Config.ExtraRandomnessSeed = unchecked(((uint)rng.Next() & 0xffffu) | (((uint)rng.Next() & 0xffffu) << 16));
-			}
 			else if (uint.TryParse(input, NumberStyles.AllowHexSpecifier, null, out uint result))
 			{
-				Config.ExtraRandomnessSeed = result;
+				ExtraRandomnessSeed.Value = result;
 			}
 		}
 
@@ -343,21 +675,19 @@ namespace Distance.ReplayIntensifies
 			var rng = new System.Random();
 			foreach (string carName in carNames.Where(c => FilterCarType(c, filter)))
 			{
-				Config.SetCarTypeChance(carName, (float)rng.NextDouble(), false);
+				SetCarTypeChance(carName, (float)rng.NextDouble(), false);
 			}
-			Config.Save();
-			ResetCentrifugeMenuControls();
 		}
 
-		private void SetCarWeights(IEnumerable<string> carNames, string filter, float weight)
+		public void SetCarWeights(IEnumerable<string> carNames, string filter, float weight)
 		{
+			Log.LogWarning("Setting Car Weights");
 			weight = Mathf.Clamp(weight, 0.0f, MaxRandomWeight);
 			foreach (string carName in carNames.Where(c => FilterCarType(c, filter)))
 			{
-				Config.SetCarTypeChance(carName, weight, false);
+				Log.LogInfo("Car weight for: " + carName);
+				SetCarTypeChance(carName, weight);
 			}
-			Config.Save();
-			ResetCentrifugeMenuControls();
 		}
 
 		private void OnSubmitSetVanillaCarWeights(string input)
@@ -365,11 +695,6 @@ namespace Distance.ReplayIntensifies
 			if (string.IsNullOrEmpty(input))
 			{
 				// Don't change
-			}
-			else if (input == RngKeyword)
-			{
-				SetRandomCarWeights(RandomCarType.AllowedVanillaCarNames, null);
-
 			}
 			else if (float.TryParse(input, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
 			{
@@ -382,11 +707,6 @@ namespace Distance.ReplayIntensifies
 			if (string.IsNullOrEmpty(input))
 			{
 				// Don't change
-			}
-			else if (input == RngKeyword)
-			{
-				SetRandomCarWeights(RandomCarType.CustomCarNames, filter);
-
 			}
 			else if (float.TryParse(input, out float result) && !float.IsNaN(result) && !float.IsInfinity(result))
 			{
@@ -424,534 +744,12 @@ namespace Distance.ReplayIntensifies
 
 		private void OnConfirmResetVanillaCarWeights()
 		{
-			var defaultValues = Config.GetDefaultCarWeights();
+			var defaultValues = GetDefaultCarWeights();
 			foreach (string carName in RandomCarType.AllowedVanillaCarNames)
 			{
 				defaultValues.TryGetValue(carName, out float defaultValue); // Default weight or 0f.
 
-				Config.SetCarTypeChance(carName, defaultValue, false); // Hold off on auto-saving until afterwards.
-			}
-			Config.Save();
-			ResetCentrifugeMenuControls();
-		}
-
-		private void OnAskResetVanillaCarWeights()
-		{
-			MessageBox.Create("Are you sure you want to reset all vanilla car weights?", "RESET WEIGHTS")
-				.SetButtons(Centrifuge.Distance.Data.MessageButtons.YesNo)
-				.OnConfirm(OnConfirmResetVanillaCarWeights)
-				.Show();
-		}
-
-		#endregion
-
-		#region Settings Menu Create
-
-		private void CreateSettingsMenu()
-		{
-			MenuTree settingsMenu = new MenuTree($"menu.mod.{Mod.Name.ToLower()}", Mod.FriendlyName);
-
-			// Page 1
-			settingsMenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:limits",
-				"LIMITS SETTINGS",
-				CreateLimitsSubmenu(),
-				"Limits options for maximum number of live replays, saved local replays, and displayed online leaderboard ranks.");
-
-			/*settingsMenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:quality",
-				"QUALITY SETTINGS",
-				CreateQualitySubmenu(),
-				"Replay car rendering and performance options.");*/
-
-			settingsMenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:replaymode",
-				"REPLAY MODE SETTINGS",
-				CreateReplayModeSubmenu(),
-				"Replay Mode controls and behavior options.");
-
-			// We can't check for Steam builds this early in initialization, so always show the menu.
-			// It's fine, since the setting will always claim itself to be 'off' when `SteamworksManager.IsSteamBuild_` is false.
-			settingsMenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:rivals",
-				"STEAM RIVALS SETTINGS",
-				CreateSteamRivalsSubmenu(),
-				"Steam Rivals are users who're given their own ghost car style, so that you can spot your [i]true[/i] opponent from far away." +
-				" Users can be changed from the level select leaderboards menu, or by editing Settings/Config.json.");
-
-			settingsMenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:randomized_cars",
-				"RANDOMIZED CARS SETTINGS",
-				CreateRandomizedCarsSubmenu(),
-				"Randomized cars allows changing up the cars and colors used by opponents. This can be useful when racing against local replays that all use the same car.");
-
-			settingsMenu.ListBox<GhostOrReplay>(MenuDisplayMode.Both,
-				"setting:use_data_effect_for_mode",
-				"USE DATA EFFECT FOR MODE",
-				() => Config.UseDataEffectForMode,
-				(value) => Config.UseDataEffectForMode = value,
-				GhostOrReplayExtensions.GetSettingsEntries(),
-				"Which modes to use the data materialization spawn/finish-despawn effect in for non-ghost car styles.");
-
-			// Settings in the root menu that are accessed the most often (from my own experience).
-			settingsMenu.ListBox<CarStyle>(MenuDisplayMode.Both,
-				"setting:ghost_car_style",
-				"GHOST CAR STYLE",
-				() => CarStyleExtensions.ToCarStyle(Config.GhostDetailType, Config.GhostOutline),
-				(value) => {
-					Config.GhostDetailType = value.GetDetailType();
-					Config.GhostOutline = value.HasOutline();
-				},
-				CarStyleExtensions.GetSettingsEntries(),
-				"Change the visual detail type of Ghost cars.");
-
-			settingsMenu.ListBox<CarStyle>(MenuDisplayMode.Both,
-				"setting:replay_car_style",
-				"REPLAY CAR STYLE",
-				() => CarStyleExtensions.ToCarStyle(Config.ReplayDetailType, Config.ReplayOutline),
-				(value) => {
-					Config.ReplayDetailType = value.GetDetailType();
-					Config.ReplayOutline = value.HasOutline();
-				},
-				CarStyleExtensions.GetSettingsEntries(),
-				"Change the visual detail type of Replay Mode cars.");
-
-
-			settingsMenu.ListBox<CarLevelOfDetail.Level>(MenuDisplayMode.Both,
-				"setting:max_level_of_detail",
-				"MAX CAR LEVEL OF DETAIL",
-				() => Config.MaxLevelOfDetail,
-				(value) => Config.MaxLevelOfDetail = value,
-				GetMaxLevelOfDetailSettingsEntries(),
-				"Change the highest level of detail that opponent cars will render with." +
-				" Lowering Max Level of Detail can improve performance when playing with more ghosts.");
-
-			// NOTE: Min LOD has to be removed due to affecting the level environment.
-			settingsMenu.ListBox<CarLevelOfDetail.Level>(MenuDisplayMode.Both,
-				"setting:min_level_of_detail",
-				"MIN CAR LEVEL OF DETAIL",
-				() => Config.MinLevelOfDetail,
-				(value) => Config.MinLevelOfDetail = value,
-				GetMinLevelOfDetailSettingsEntries(),
-				"Change the lowest level of detail that opponent cars will render with." +
-				" Raising Min Level of Detail can decrease performance when playing with more ghosts." +
-				" NOTE: In-Focus will force a car's LOD to be higher than normal for non-camera-focused cars.");
-
-			// Page 2
-
-			Menus.AddNew(MenuDisplayMode.Both, settingsMenu,
-				Mod.FriendlyName.ToUpper(),
-				"Settings for replay limits, leaderboard limits, and car rendering.");
-		}
-
-		private MenuTree CreateLimitsSubmenu()
-		{
-			MenuTree limitsSubmenu = new MenuTree($"submenu.mod.{Mod.Name.ToLower()}.limits", "Replay & Leaderboard Limits");
-
-			// Page 1
-			limitsSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:use_max_selected_replays",
-				"USE MAX SELECTED REPLAYS",
-				() => Config.EnableSeparateMaxForSelectedReplays,
-				(value) => Config.EnableSeparateMaxForSelectedReplays = value,
-				"Use a separate maximum for the number of selected ghosts from the leaderboards menu.");
-
-			limitsSubmenu.IntegerSlider(MenuDisplayMode.Both,
-				"setting:max_auto_replays",
-				"MAX AUTO REPLAYS",
-				() => G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_,
-				(value) => {
-					G.Sys.OptionsManager_.Replay_.GhostsInArcadeCount_ = value;
-					// Make sure to save changes, since ReplaySettings only saves after its own menu is closed.
-					G.Sys.OptionsManager_.Replay_.Save();
-				},
-				1, Mod.MaxReplaysAtAll,
-				5,
-				"Maximum number of ghosts that will auto-load when playing a level. This is the [i]GHOSTS IN ARCADE COUNT[/i] option from the Replays menu, and is included here for convenience.");
-
-			limitsSubmenu.IntegerSlider(MenuDisplayMode.Both,
-				"setting:max_selected_replays",
-				"MAX SELECTED REPLAYS",
-				() => Config.MaxSelectedReplays,
-				(value) => Config.MaxSelectedReplays = value,
-				Mod.OriginalMaxReplays, Mod.MaxReplaysAtAll,
-				Mod.OriginalMaxReplays,
-				"Maximum number of ghosts that will be loaded when selecting from the leaderboards menu.");
-
-
-			limitsSubmenu.IntegerSlider(MenuDisplayMode.Both,
-				"setting:max_online_leaderboards",
-				"MAX ONLINE LEADERBOARD RANKS",
-				() => Config.MaxOnlineLeaderboards,
-				(value) => Config.MaxOnlineLeaderboards = value,
-				Mod.MinOnlineLeaderboards, Mod.MaxOnlineLeaderboardsAtAll,
-				Mod.OriginalMaxOnlineLeaderboards,
-				"Maximum number of leaderboard ranks shown for Friends and Online tabs.");
-
-			limitsSubmenu.IntegerSlider(MenuDisplayMode.Both,
-				"setting:max_saved_local_replays",
-				"MAX SAVED LOCAL REPLAYS",
-				() => Config.MaxSavedLocalReplays,
-				(value) => Config.MaxSavedLocalReplays = value,
-				Mod.OriginalMaxSavedLocalReplays, Mod.MaxSavedLocalReplaysAtAll,
-				500,
-				"Maximum number of local leaderboard replays that will be saved.\n[FF0000]WARNING:[-] Completing a map with more than this number of ghosts will remove ALL ghosts past the maximum.");
-
-			limitsSubmenu.ListBox<LocalLeaderboardTrimming>(MenuDisplayMode.Both,
-				"setting:local_replay_trimming",
-				"LOCAL REPLAY TRIMMING",
-				() => Config.LocalReplayTrimming,
-				(value) => Config.LocalReplayTrimming = value,
-				LocalLeaderboardTrimmingExtensions.GetSettingsEntries(),
-				"When creating a local leaderboard replay past the placement limit, choose whether replays are Never deleted, only your Current Run gets deleted, or if all replays past the limit Always get deleted.");
-
-			limitsSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:fill_with_local_replays",
-				"FILL WITH LOCAL REPLAYS",
-				() => Config.FillWithLocalReplays,
-				(value) => Config.FillWithLocalReplays = value,
-				"Fill remaining auto slots with local replays when there aren't enough online replays to load.");
-
-			limitsSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:enable_unrestricted_colors",
-				"ENABLE UNRESTRICTED OPPONENT COLORS",
-				() => Config.EnableUnrestrictedOpponentColors,
-				(value) => Config.EnableUnrestrictedOpponentColors = value,
-				"Online opponents and non-[i]Ghost Detail Type[/i] cars will NOT have their colors clamped, allowing for extremely bright cars." +
-				" Bright cars are made by editing color preset files and changing the color channels to very large values.");
-
-			return limitsSubmenu;
-		}
-
-		private MenuTree CreateReplayModeSubmenu()
-		{
-			MenuTree replayModeSubmenu = new MenuTree($"submenu.mod.{Mod.Name.ToLower()}.replaymode", "Replay Mode");
-
-			// Page 1
-			replayModeSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:replaymode_disable_cinematic_cameras",
-				"DISABLE CINEMATIC CAMERAS",
-				() => Config.ReplayModeDisableCinematicCameras,
-				(value) => Config.ReplayModeDisableCinematicCameras = value,
-				"Turn off cinematic camera triggers in replay mode, allowing for more flexible camera movement.");
-
-			replayModeSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:replaymode_pause_at_start",
-				"PAUSE AT START",
-				() => Config.ReplayModePauseAtStart,
-				(value) => Config.ReplayModePauseAtStart = value,
-				"Pause at match start during replay mode, allowing easier tracking of extremely short runs.");
-
-			/*replayModeSubmenu.FloatSlider(MenuDisplayMode.Both,
-				"setting:replaymode_pre_spectate_time",
-				"FINISH PRE-SPECTATE TIME",
-				() => Config.FinishPreSpectateTime,
-				(value) => Config.FinishPreSpectateTime = value,
-				0.02f, 300f,
-				5.0f,
-				"Change the number of seconds to wait after finishing a level before going into spectate mode.");*/
-
-			// Use an InputPrompt to reduce the strain on constantly changing the setting and causing all rival cars to update their outline.
-			replayModeSubmenu.InputPrompt(MenuDisplayMode.Both,
-				"setting:replaymode_pre_spectate_time_input",
-				"FINISH PRE-SPECTATE TIME",
-				OnSubmitFinishPreSpectateTime,
-				null,
-				OnValidateFloat,
-				"ENTER SECONDS",
-				null,
-				"Change the number of seconds to wait after finishing a level before going into spectate mode (default is 5 seconds).")
-				.WithDefaultValue(() => Config.FinishPreSpectateTime.ToString()); // Need to use this since there's no method for function defaults.
-
-			return replayModeSubmenu;
-		}
-
-		private MenuTree CreateSteamRivalsSubmenu()
-		{
-			MenuTree rivalsSubmenu = new MenuTree($"submenu.mod.{Mod.Name.ToLower()}.rivals", "Steam Rivals");
-
-			// Page 1
-			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:rivals_enabled",
-				"ENABLE STEAM RIVALS",
-				() => Config.EnableSteamRivals,
-				(value) => Config.EnableSteamRivals = value,
-				"Enable the Steam Rivals feature.");
-
-			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:rivals_highlight_in_leaderboards",
-				"HIGHLIGHT RIVALS IN LEADERBOARDS",
-				() => Config.HighlightRivalsInLeaderboards,
-				(value) => Config.HighlightRivalsInLeaderboards = value,
-				"Steam Rivals listed in the level select leaderboards menu will be colored differently.");
-
-			rivalsSubmenu.ListBox<GhostOrReplay>(MenuDisplayMode.Both,
-				"setting:rival_use_style_for_mode",
-				"USE CAR STYLE FOR MODE",
-				() => Config.UseRivalStyleForMode,
-				(value) => Config.UseRivalStyleForMode = value,
-				GhostOrReplayExtensions.GetSettingsEntries(),
-				"Which modes to use the Steam Rival car style in.");
-
-			rivalsSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:rival_use_style_for_self",
-				"USE CAR STYLE FOR SELF",
-				() => Config.UseRivalStyleForSelf,
-				(value) => Config.UseRivalStyleForSelf = value,
-				"Steam Rival car styles will also be used for your own ghosts.");
-
-			rivalsSubmenu.ListBox<CarStyle>(MenuDisplayMode.Both,
-				"setting:rival_car_style",
-				"RIVAL CAR STYLE",
-				() => CarStyleExtensions.ToCarStyle(Config.RivalDetailType, Config.RivalOutline),
-				(value) => {
-					Config.RivalDetailType = value.GetDetailType();
-					Config.RivalOutline = value.HasOutline();
-				},
-				CarStyleExtensions.GetSettingsEntries(),
-				"Change the visual detail type of Steam Rival cars.");
-
-			/*rivalsSubmenu.FloatSlider(MenuDisplayMode.Both,
-				"setting:rival_outline_brightness",
-				"RIVAL OUTLINE BRIGHTNESS",
-				() => Config.RivalBrightness,
-				(value) => {
-
-					Config.RivalBrightness = value;
-					// Treat changes to this value as an event since we don't have many other options for detecting if our own menu is closed.
-					//  (GSL never broadcasts the Events.GUI.MenuClosed static event)
-					Events.ReplayOptionsMenu.MenuClose.Broadcast(null);
-				},
-				0.05f, 100_000f,
-				1f,
-				"Change the brightness for Steam Rival car outlines.");*/
-
-			// Use an InputPrompt to reduce the strain on constantly changing the setting and causing all rival cars to update their outline.
-			rivalsSubmenu.InputPrompt(MenuDisplayMode.Both,
-				"setting:rival_outline_brightness_input",
-				"RIVAL OUTLINE BRIGHTNESS",
-				OnSubmitRivalOutlineBrightness,
-				null,
-				OnValidateFloat,
-				"ENTER OUTLINE BRIGHTNESS",
-				null,
-				"Change the brightness for Steam Rival car outlines." +
-				" NOTE: Brightness values higher than 1.0 will only increase the intensity of flames and wing trails.")
-				.WithDefaultValue(() => Config.RivalBrightness.ToString()); // Need to use this since there's no method for function defaults.
-
-			return rivalsSubmenu;
-		}
-
-		private MenuTree CreateRandomizedCarsSubmenu()
-		{
-			MenuTree randomSubmenu = new MenuTree($"submenu.mod.{Mod.Name.ToLower()}.random", "Randomized Cars");
-
-			// Page 1
-			randomSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_enabled",
-				"ENABLE RANDOMIZED CARS",
-				() => Config.EnableRandomizedCars,
-				(value) => Config.EnableRandomizedCars = value,
-				"Enable the randomized cars feature, allowing for more variety with opponents.");
-
-			randomSubmenu.ListBox<LocalOrOnline>(MenuDisplayMode.Both,
-				"setting:random_local_or_online_cars",
-				"USE RANDOM CARS FOR",
-				() => Config.UseRandomCarsFor,
-				(value) => Config.UseRandomCarsFor = value,
-				LocalOrOnlineExtensions.GetSettingsEntries(),
-				"Choose whether local and/or online leaderboards replays will be randomized." +
-				" 'Online' is not recommended for normal play, since a player's car can be considered part of 'their identity' in the leaderboards.");
-
-			randomSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_rival_cars",
-				"USE RANDOM RIVAL CARS",
-				() => Config.UseRandomRivalCars,
-				(value) => Config.UseRandomRivalCars = value,
-				"Rival cars will be randomized (STEAM RIVALS feature must be enabled).");
-
-			randomSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_respect_backer_cars",
-				"RESPECT KICKSTARTER BACKERS",
-				() => Config.RandomRespectBackerCars,
-				(value) => Config.RandomRespectBackerCars = value,
-				"Disable randomizing online replays that use the Kickstarter backer car.");
-
-			randomSubmenu.InputPrompt(MenuDisplayMode.Both,
-				"setting:extra_randomness",
-				"EXTRA RANDOMNESS SEED",
-				OnSubmitExtraRandomnessSeed,
-				null,
-				OnValidateExtraRandomnessSeed,
-				"ENTER AN INTEGER",
-				null,
-				"Change up the fixed randomness for replays a little." +
-				$" Enter a number between 0 and {uint.MaxValue} (0x{uint.MaxValue:X8}). Or enter " + RngKeyword + " to generate a random number.")
-				.WithDefaultValue(() => Config.ExtraRandomnessSeed.ToString());
-
-
-			const string SeedMethodDescription =
-				" By Replay will use the replay data as the seed, so that each replay will always be the same." +
-				" By Placement will use the placement between all replays as the seed.";
-
-			const string ChoiceMethodDescription =
-				" Cycle will randomly cycle through choices once before choosing duplicates.";
-
-			randomSubmenu.ListBox<RandomSeedMethod>(MenuDisplayMode.Both,
-				"setting:random_car_seed_method",
-				"CAR SEED METHOD",
-				() => Config.RandomCarSeedMethod,
-				(value) => Config.RandomCarSeedMethod = value,
-				RandomSeedMethodExtensions.GetSettingsEntries(),
-				"Change how randomness is determined for car types." + SeedMethodDescription);
-
-			randomSubmenu.ListBox<RandomSeedMethod>(MenuDisplayMode.Both,
-				"setting:random_color_seed_method",
-				"COLOR SEED METHOD",
-				() => Config.RandomColorSeedMethod,
-				(value) => Config.RandomColorSeedMethod = value,
-				RandomSeedMethodExtensions.GetSettingsEntries(),
-				"Change how randomness is determined for car colors." + SeedMethodDescription);
-
-			randomSubmenu.ListBox<RandomCarMethod>(MenuDisplayMode.Both,
-				"setting:random_car_choice_method",
-				"CAR CHOICE METHOD",
-				() => Config.RandomCarChoiceMethod,
-				(value) => Config.RandomCarChoiceMethod = value,
-				RandomCarMethodExtensions.GetSettingsEntries(),
-				"Choose how random car types will be decided." + ChoiceMethodDescription);
-
-			randomSubmenu.ListBox<RandomColorMethod>(MenuDisplayMode.Both,
-				"setting:random_color_choice_method",
-				"COLOR CHOICE METHOD",
-				() => Config.RandomColorChoiceMethod,
-				(value) => Config.RandomColorChoiceMethod = value,
-				RandomColorMethodExtensions.GetSettingsEntries(),
-				"Choose how random car colors will be decided." + ChoiceMethodDescription);
-
-			// Page 2
-			randomSubmenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:random_vanilla_car_weights",
-				"VANILLA CAR WEIGHT SETTINGS",
-				CreateVanillaCarWeightsSubmenu(),
-				"Change weighted chances for vanilla cars to be randomly chosen.");
-
-			randomSubmenu.SubmenuButton(MenuDisplayMode.Both,
-				"submenu:random_custom_car_weights",
-				"CUSTOM CAR WEIGHT SETTINGS",
-				CreateCustomCarWeightsSubmenu(),
-				"Change weighted chances for custom cars to be randomly chosen.");
-
-			randomSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_require_car_unlocks",
-				"REQUIRE CAR UNLOCKS",
-				() => Config.RandomRequireCarUnlocks,
-				(value) => Config.RandomRequireCarUnlocks = value,
-				"Disable using random car types that you haven't unlocked yet.");
-
-			return randomSubmenu;
-		}
-
-		private MenuTree CreateVanillaCarWeightsSubmenu()
-		{
-			MenuTree randomVanillaCarWeightsSubmenu = new MenuTree($"submenu.mod.{Mod.Name.ToLower()}.random.vanilla_car_chances", "Vanilla Car Weights");
-			this.randomVanillaCarWeightsSubmenu = randomVanillaCarWeightsSubmenu;
-
-			return randomVanillaCarWeightsSubmenu;
-		}
-
-		private MenuTree CreateCustomCarWeightsSubmenu()
-		{
-			MenuTree customSubmenu = new MenuTree($"submenu.mod.{Mod.Name.ToLower()}.random.custom_car_chances", "Custom Car Weights");
-			this.randomCustomCarWeightsSubmenu = customSubmenu;
-
-			return customSubmenu;
-		}
-
-		private const bool WeightsItalics = false;
-		private const string WeightsPrefix  = (WeightsItalics) ? "[i]"  : "";
-		private const string WeightsPostfix = (WeightsItalics) ? "[/i]" : "";
-
-		private void PopulateCarWeightsSubmenus()
-		{
-			MenuTree vanillaSubmenu = this.randomVanillaCarWeightsSubmenu;
-			MenuTree customSubmenu = this.randomCustomCarWeightsSubmenu;
-			if (vanillaSubmenu.Count > 0 && customSubmenu.Count > 0)
-			{
-				return; // Already populated.
-			}
-			vanillaSubmenu.Clear();
-			customSubmenu.Clear();
-
-
-			vanillaSubmenu.InputPrompt(MenuDisplayMode.Both,
-				"setting:set_vanilla_car_chances",
-				WeightsPrefix + "SET ALL VANILLA CAR WEIGHTS" + WeightsPostfix,
-				OnSubmitSetVanillaCarWeights,
-				null,
-				OnValidateFloatOrRng,
-				"ENTER VANILLA WEIGHT",
-				null,
-				string.Format(CultureInfo.InvariantCulture, // Decimal characters differ by culture, so force invariant to match 0.0
-				"Set the weighted chance for all matching custom cars. Enter a decimal number between 0.0 and {0:0.0}.", MaxRandomWeight) +
-				" Or enter " + RngKeyword + " to assign random weights to each individual car.");
-
-			vanillaSubmenu.ActionButton(MenuDisplayMode.Both,
-				"setting:reset_vanilla_car_chances",
-				WeightsPrefix + "RESET VANILLA CAR WEIGHTS" + WeightsPostfix,
-				OnAskResetVanillaCarWeights,
-				"All vanilla cars will be set back to their default weighted chances of appearing.");
-
-			
-			customSubmenu.InputPrompt(MenuDisplayMode.Both,
-				"setting:set_custom_car_chances",
-				WeightsPrefix + "SET ALL CUSTOM CAR WEIGHTS" + WeightsPostfix,
-				OnSubmitSetCustomCarWeightsWithFilter,
-				null,
-				null,
-				"ENTER FILTER/OR SKIP",
-				null,
-				"Enter a filter to match custom cars by name." +
-				string.Format(CultureInfo.InvariantCulture, // Decimal characters differ by culture, so force invariant to match 0.0
-				" Then set the weighted chance for all matching custom cars. Enter a decimal number between 0.0 and {0:0.0}.", MaxRandomWeight) +
-				" Or enter " + RngKeyword + " to assign random weights to each individual car.");
-
-			customSubmenu.FloatSlider(MenuDisplayMode.Both,
-				"setting:random_custom_cars_default_chance",
-				WeightsPrefix + "DEFAULT CUSTOM CARS WEIGHT" + WeightsPostfix,
-				() => Config.RandomCustomCarsDefaultWeight,
-				(value) => Config.RandomCustomCarsDefaultWeight = value,
-				0.0f, MaxRandomWeight,
-				0.0f,
-				"Default weighted chance for any custom car with an individual weight of 0.0." +
-				" Use this when you want all custom cars to have a chance of appearing, without having to touch the settings after new additions (0.0 to disable).");
-
-			customSubmenu.CheckBox(MenuDisplayMode.Both,
-				"setting:random_custom_cars_split_default_chance",
-				WeightsPrefix + "SPLIT DEFAULT CUSTOM CARS WEIGHT" + WeightsPostfix,
-				() => Config.RandomCustomCarsSplitDefaultWeight,
-				(value) => Config.RandomCustomCarsSplitDefaultWeight = value,
-				"Any custom car using the default weight will split the weighted chance of appearing among all custom cars, rather than being given the same weight (see option above).");
-
-
-			var defaultCarChances = Config.GetDefaultCarWeights();
-			foreach (var carType in RandomCarType.LoadAllCarTypes(false, 0f, 1))
-			{
-				string carName = carType.Name;
-				
-				defaultCarChances.TryGetValue(carName, out float defaultValue); // Default weight or 0f.
-
-				var submenu = (carType.IsVanilla) ? vanillaSubmenu : customSubmenu;
-				string customText = (carType.IsVanilla) ? "" : " custom";
-
-				submenu.FloatSlider(MenuDisplayMode.Both,
-					"setting:random_car_chance:" + carName,
-					carName,//.ToUpper(),
-					() => Config.GetCarTypeChance(carName),
-					(value) => Config.SetCarTypeChance(carName, value),
-					0.0f, MaxRandomWeight,
-					defaultValue,
-					$"Weighted chance that the '{carName}'{customText} car will be randomly chosen (0.0 to ignore this car).");
+				SetCarTypeChance(carName, defaultValue, false); // Hold off on auto-saving until afterwards.
 			}
 		}
 
@@ -978,9 +776,9 @@ namespace Distance.ReplayIntensifies
 		/// </remarks>
 		public static int GetMaxPickedReplays(/*bool replayMode*/)
 		{
-			if (Mod.Instance.Config.EnableSeparateMaxForSelectedReplays)
+			if (EnableSeparateMaxForSelectedReplays.Value)
 			{
-				return Mathf.Clamp(Mod.Instance.Config.MaxSelectedReplays, Mod.OriginalMaxReplays, Mod.MaxReplaysAtAll);
+				return Mathf.Clamp(Mod.MaxSelectedReplays.Value, Mod.OriginalMaxReplays, Mod.MaxReplaysAtAll);
 			}
 			else
 			{
@@ -1007,7 +805,7 @@ namespace Distance.ReplayIntensifies
 		/// </remarks>
 		public static int GetMaxSavedLocalReplays()
 		{
-			return Mathf.Clamp(Mod.Instance.Config.MaxSavedLocalReplays, Mod.OriginalMaxSavedLocalReplays, Mod.MaxSavedLocalReplaysAtAll);
+			return Mathf.Clamp(MaxSavedLocalReplays.Value, OriginalMaxSavedLocalReplays, MaxSavedLocalReplaysAtAll);
 		}
 
 		/// <summary>
@@ -1018,7 +816,7 @@ namespace Distance.ReplayIntensifies
 		/// </remarks>
 		public static int GetMaxOnlineLeaderboards()
 		{
-			return Mathf.Clamp(Mod.Instance.Config.MaxOnlineLeaderboards, Mod.MinOnlineLeaderboards, Mod.MaxOnlineLeaderboardsAtAll);
+			return Mathf.Clamp(MaxOnlineLeaderboards.Value, MinOnlineLeaderboards, MaxOnlineLeaderboardsAtAll);
 		}
 
 		/// <summary>
@@ -1034,7 +832,7 @@ namespace Distance.ReplayIntensifies
 			if (result && playerDataBase is PlayerDataOpponent)
 			{
 				//Mod.Instance.Logger.Debug("GetClampCarColors: playerDataBase is PlayerDataOpponent");
-				return !Mod.Instance.Config.EnableUnrestrictedOpponentColors;
+				return !EnableUnrestrictedOpponentColors.Value;
 			}
 			return result;
 		}
@@ -1108,7 +906,7 @@ namespace Distance.ReplayIntensifies
 		/// </remarks>
 		public static void UpdateLeaderboardButtonColor(LevelSelectLeaderboardButton button, bool force)
 		{
-			if (!Mod.Instance.Config.EnableSteamRivals || !Mod.Instance.Config.HighlightRivalsInLeaderboards)
+			if (!EnableSteamRivals.Value || !HighlightRivalsInLeaderboards.Value)
 			{
 				return;
 			}
@@ -1121,7 +919,7 @@ namespace Distance.ReplayIntensifies
 			if (!entry.info_.isLocal_ && entry.leaderboardEntry_ is SteamworksLeaderboard.Entry steamEntry)
 			{
 				ulong steamID = SteamworksHelper.GetLeaderboardEntrySteamID(steamEntry);
-				if (Mod.Instance.Config.IsSteamRival(steamID, true))
+				if (Instance.IsSteamRival(steamID, true))
 				{
 					color = ColorEx.HexToColor("9480E7"); // Same as sprint campaign level set color (might be a little dark)
 					isRival = true;
@@ -1134,6 +932,401 @@ namespace Distance.ReplayIntensifies
 				button.SetLabelColor(button.placeLabel_, color);
 				button.SetLabelColor(button.dataLabel_, color);
 			}
+		}
+
+		#endregion
+
+		#region Other Helper Methods
+
+		public CarLevelOfDetail.Type GetCarDetailType(bool isGhost, bool isCarRival)
+		{
+			if (isCarRival)
+			{
+				return RivalDetailType.Value;
+			}
+			return (isGhost) ? GhostDetailType.Value : ReplayDetailType.Value;
+		}
+
+		public bool GetCarOutline(bool isGhost, bool isCarRival)
+		{
+			if (isCarRival)
+			{
+				return RivalOutline.Value;
+			}
+			return (isGhost) ? GhostOutline.Value : ReplayOutline.Value;
+		}
+
+		// Determines if this car should be displayed as a Steam Rival (which accounts for settings like 'Use rival style for ghosts/replays', etc.).
+		public bool IsCarSteamRival(bool isGhost, long userID) => IsCarSteamRival(isGhost, unchecked((ulong)userID));
+
+		public bool IsCarSteamRival(bool isGhost, ulong userID)
+		{
+			if (EnableSteamRivals.Value && UseRivalStyleForMode.Value.HasGhostOrReplay(isGhost))
+			{
+				return IsSteamRival(userID, false);
+			}
+			return false;
+		}
+
+		public float GetCarTypeChance(string carName)
+		{
+			if (RandomCarWeights.TryGetValue(carName, out float weight))
+			{
+				return weight;
+			}
+			return 0f;
+		}
+
+		public void SetCarTypeChance(string carName, float weight, bool autoSave = true)
+		{
+			var randomCarChances = RandomCarWeights;
+			if (!randomCarChances.TryGetValue(carName, out float oldWeight) || oldWeight != weight)
+			{
+				randomCarChances[carName] = weight;
+
+				if (autoSave)
+				{
+					SaveDictionary(RandomCarWeights);
+				}
+			}
+		}
+
+		public bool IsCarRandomnessEnabled(bool isOnline, bool isCarRival, string carName)
+		{
+			if (EnableRandomizedCars.Value)
+			{
+				if (isOnline && RandomRespectBackerCars.Value && RandomCarType.IsBackerCar(carName))
+				{
+					// Only count setting when used for online cars (we still want backers to be able to randomize their own local replays).
+					return false;
+				}
+				else if (isCarRival)
+				{
+					return UseRandomRivalCars.Value;
+				}
+				else if (isOnline)
+				{
+					return UseRandomCarsFor.Value.HasFlag(LocalOrOnline.Online_Replays);
+				}
+				else
+				{
+					return UseRandomCarsFor.Value.HasFlag(LocalOrOnline.Local_Replays);
+				}
+			}
+			return false;
+		}
+
+		#endregion
+
+		#region SteamRivals Helpers
+
+		public bool IsSteamRival(long userID, bool excludeSelf = false) => IsSteamRival(unchecked((ulong)userID), excludeSelf);
+
+		public bool IsSteamRival(ulong userID, bool excludeSelf = false)
+		{
+			if (SteamworksManager.GetSteamID() == userID)
+			{
+				return !excludeSelf && UseRivalStyleForSelf.Value; // SteamRivals ignores your own user ID in the list.
+			}
+			return SteamRivals.ContainsKey(userID);
+		}
+
+		public bool TryGetSteamRival(long userID, out string nameComment) => TryGetSteamRival(unchecked((ulong)userID), out nameComment);
+
+		public bool TryGetSteamRival(ulong userID, out string nameComment)
+		{
+			return SteamRivals.TryGetValue(userID, out nameComment);
+		}
+
+		public bool AddSteamRival(long userID, string nameComment, bool autoSave = true) => AddSteamRival(unchecked((ulong)userID), nameComment, autoSave);
+
+		public bool AddSteamRival(ulong userID, string nameComment, bool autoSave = true)
+		{
+			if (nameComment == null)
+			{
+				nameComment = string.Empty; // Default to empty string I guess? It doesn't really matter either way, but would be more user friendly.
+			}
+
+			var steamRivals = SteamRivals;
+			if (!steamRivals.ContainsKey(userID))
+			{
+				steamRivals[userID] = nameComment; // Name comment to make identifying users in Config.json easier.
+				if (autoSave)
+				{
+					SaveDictionary(SteamRivals);
+				}
+				return true;
+			}
+			return false;
+		}
+
+		public bool RemoveSteamRival(long userID, bool autoSave = true) => RemoveSteamRival(unchecked((ulong)userID), autoSave);
+
+		public bool RemoveSteamRival(ulong userID, bool autoSave = true)
+		{
+			if (SteamRivals.Remove(userID))
+			{
+				if (autoSave)
+				{
+					SaveDictionary(SteamRivals);
+				}
+				return true;
+			}
+			return false;
+		}
+
+		public int CountSteamRivals(IEnumerable<long> userIDs, bool countSelf = true)
+		{
+			return CountSteamRivals(userIDs.Select((userID) => unchecked((ulong)userID)), countSelf);
+		}
+
+		public int CountSteamRivals(IEnumerable<ulong> userIDs, bool countSelf = true)
+		{
+			//var useRivalStyleForSelf = this.UseRivalStyleForSelf;
+			ulong selfID = SteamworksManager.GetSteamID();
+			var steamRivals = SteamRivals;
+
+			return userIDs.Count((userID) => (userID == selfID ? countSelf : steamRivals.ContainsKey(userID)));
+		}
+
+		#endregion
+
+		#region Randomized Cars Helpers
+
+		private int unfixedRandomCount = 0;
+
+		private System.Random GetRandom(int replaySeed, int placementSeed, RandomSeedMethod seedMethod, int skipCount)
+		{
+			int seed;
+			switch (seedMethod)
+			{
+				case RandomSeedMethod.By_Replay:
+					seed = replaySeed;
+					break;
+				case RandomSeedMethod.By_Placement:
+					seed = placementSeed;
+					break;
+				case RandomSeedMethod.Always_Random:
+				default:
+					// Default constructor seed for System.Random, combined with an increment
+					//  to ensure we're not creating multiple RNGs on the same tick.
+					seed = unchecked(Environment.TickCount + unfixedRandomCount++);
+					break;
+			}
+			System.Random rng = new System.Random(seed ^ unchecked((int)ExtraRandomnessSeed.Value));
+
+			for (int i = 0; i < skipCount; i++)
+			{
+				rng.NextDouble();
+			}
+			return rng;
+		}
+
+		public CarReplayData.CarData ChooseRandomCarData(CarReplayData.CarData origCarData, int replaySeed, int placementSeed,
+														 List<RandomCarType> carTypes, List<RandomColorPreset> colorPresets)
+		{
+			var carRng = GetRandom(replaySeed, placementSeed, RandomCarSeedMethod.Value, 0);
+			var colorRng = GetRandom(replaySeed, placementSeed, RandomColorSeedMethod.Value, 1);
+
+			// ==== Choose our car type ====
+
+			if (!RandomCarType.TryCreate(origCarData.name_, 1f, 1, false, out var carType))
+			{
+				carType = RandomCarType.DefaultCarType;
+			}
+
+			var carMethod = RandomCarChoiceMethod.Value;
+			if (carMethod.IsCarTypes())
+			{
+				if (carTypes != null)
+				{
+					int carTypeIndex = carTypes.Count - 1; // Default to end in very unlikely scenario of rolling exactly 1.0.
+
+					// Use doubles starting here for higher precision.
+					double totalWeight = carTypes.Sum((x) => (double)x.Weight);
+
+					double end = 0.0;
+					double choice = 0.0;
+					if (carMethod != RandomCarMethod.Car_Types_Ordered)
+					{
+						choice = carRng.NextDouble() * totalWeight;
+					}
+
+					for (int i = 0; i < carTypes.Count; i++)
+					{
+						end += carTypes[i].Weight;
+						if (choice < end)
+						{
+							carTypeIndex = i;
+							break;
+						}
+					}
+
+					carType = carTypes[carTypeIndex];
+					// Remove from the pool of cars to choose from if needed.
+					if (carMethod.IsAvoidDuplicates() && carType.MaxCount > 0)
+					{
+						if (--carType.RemainingCount <= 0)
+						{
+							carTypes.RemoveAt(carTypeIndex);
+						}
+					}
+				}
+			}
+
+			// ==== Choose our car colors ====
+
+			CarColors carColors = origCarData.colors_;
+			var colorMethod = RandomColorChoiceMethod.Value;
+			if (colorMethod == RandomColorMethod.Default_Colors)
+			{
+				carColors = carType.DefaultColors;
+			}
+			else if (colorMethod.IsColorPresets())
+			{
+				if (colorPresets != null)
+				{
+					int colorPresetIndex = colorPresets.Count - 1; // Default to end in very unlikely scenario of rolling exactly 1.0.
+
+					double totalWeight = colorPresets.Sum((x) => (double)x.Weight);
+
+					double end = 0.0;
+					double choice = 0.0;
+					if (colorMethod != RandomColorMethod.Color_Presets_Ordered)
+					{
+						choice = colorRng.NextDouble() * totalWeight;
+					}
+
+					for (int i = 0; i < colorPresets.Count; i++)
+					{
+						end += colorPresets[i].Weight;
+						if (choice < end)
+						{
+							colorPresetIndex = i;
+							break;
+						}
+					}
+
+					var colorPreset = colorPresets[colorPresetIndex];
+					if (colorPreset.IsDefault)
+					{
+						carColors = carType.DefaultColors;
+					}
+					else
+					{
+						carColors = colorPreset.Colors;
+					}
+
+					// Remove from the pool of colors to choose from if needed.
+					if (colorMethod.IsAvoidDuplicates() && colorPreset.MaxCount > 0)
+					{
+						if (--colorPreset.RemainingCount <= 0)
+						{
+							colorPresets.RemoveAt(colorPresetIndex);
+						}
+					}
+				}
+			}
+			else if (colorMethod == RandomColorMethod.HSV)
+			{
+				for (ColorChanger.ColorType i = 0; i < ColorChanger.ColorType.Size_; i++)
+				{
+					// HSV seems to give a better random spread of colors than RGB.
+					// see: <https://stackoverflow.com/a/3135179/7517185>
+					carColors[i] = Color.HSVToRGB((float)colorRng.NextDouble(),
+												  (float)colorRng.NextDouble(),
+												  (float)colorRng.NextDouble());
+				}
+			}
+			else if (colorMethod == RandomColorMethod.RGB)
+			{
+				for (ColorChanger.ColorType i = 0; i < ColorChanger.ColorType.Size_; i++)
+				{
+					carColors[i] = new Color((float)colorRng.NextDouble(),
+											 (float)colorRng.NextDouble(),
+											 (float)colorRng.NextDouble());
+				}
+			}
+
+			return new CarReplayData.CarData(carType.Name, carColors);
+		}
+
+		public List<RandomColorPreset> LoadRandomColorPresets()
+		{
+			var colorPresets = RandomColorPreset.LoadAllColorPresets(defaultMaxCount: 1);
+
+			if (RandomColorSeedMethod.Value == RandomSeedMethod.By_Placement)
+			{
+				// Skip default color preset when coloring by placement (since the color varies by car).
+				colorPresets.RemoveAll((x) => x.IsDefault);
+			}
+
+			return colorPresets;
+		}
+
+		//TEST THIS NEXT TIME
+		public List<RandomCarType> LoadRandomCarTypes()
+		{
+			Dictionary<string, RandomCarType> randomCarTypes = new Dictionary<string, RandomCarType>();
+			int explicitCustomCount = 0;
+			bool requireUnlocks = RandomRequireCarUnlocks.Value;
+
+			foreach (var carWeightPair in RandomCarWeights)
+			{
+				if (RandomCarType.TryCreate(carWeightPair.Key, carWeightPair.Value, 1, requireUnlocks, out RandomCarType carType))
+				{
+					randomCarTypes.Add(carType.Name, carType);
+					if (!carType.IsVanilla)
+					{
+						explicitCustomCount++;
+					}
+				}
+			}
+
+			// Exclude number of explicitly included custom cars in settings file.
+			//int implicitCustomCount = knownCars.Count - Mod.VanillaCarChances.Count - explicitCustomCount;
+			int implicitCustomCount = RandomCarType.CustomCarsCount - explicitCustomCount;
+
+			float implicitCustomWeight = RandomCustomCarsDefaultWeight.Value;
+			if (implicitCustomCount > 0 && implicitCustomWeight > 0f)
+			{
+				if (RandomCustomCarsSplitDefaultWeight.Value)
+				{
+					implicitCustomWeight /= implicitCustomCount;
+				}
+
+				foreach (string customCarName in RandomCarType.CustomCarNames)
+				{
+					if (!randomCarTypes.ContainsKey(customCarName) &&
+						RandomCarType.TryCreate(customCarName, implicitCustomWeight, 1, requireUnlocks, out RandomCarType carType))
+					{
+						randomCarTypes.Add(carType.Name, carType);
+					}
+				}
+			}
+
+			var randomCarTypeList = randomCarTypes.Values.ToList();
+			randomCarTypeList.Sort(); // Sort using RandomCarInfo IComparable interface.
+
+			if (randomCarTypeList.Count == 0)
+			{
+				randomCarTypeList.Add(RandomCarType.DefaultCarType);
+			}
+
+			return randomCarTypeList;
+		}
+
+		public Dictionary<string, float> GetDefaultCarWeights()
+		{
+			return new Dictionary<string, float>
+			{
+				{ "Spectrum",    1.00f * MaxRandomWeight },
+				{ "Archive",     0.75f * MaxRandomWeight }, // (Adventure complete car)
+				{ "Interceptor", 0.50f * MaxRandomWeight }, // (Nitronic Rush car)
+				{ "Encryptor",   0.08f * MaxRandomWeight }, // (Doot car)
+				{ "Halcyon",     0.05f * MaxRandomWeight }, // (Shiny Spectrum car)
+				//{ "Catalyst",    0.00f }, // (Kickstarter Backer car, disabled for those that don't have this car unlocked)
+			};
 		}
 
 		#endregion
